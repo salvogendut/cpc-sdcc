@@ -50,8 +50,31 @@
 #define SSTAT_ESTABLISHED 0x17
 #define SSTAT_CLOSE_WAIT  0x1C
 
+/* --- Socket 1 registers (used for UDP/DNS) ------------------------------- */
+#define S1_MR      0x0500
+#define S1_CR      0x0501
+#define S1_IR      0x0502
+#define S1_SR      0x0503
+#define S1_PORT0   0x0504  /* source port (2 bytes, big-endian)  */
+#define S1_DIPR0   0x050C  /* destination IP (4 bytes)           */
+#define S1_DPORT0  0x0510  /* destination port (2 bytes)         */
+#define S1_TX_FSR0 0x0520  /* TX free size (2 bytes)             */
+#define S1_TX_WR0  0x0524  /* TX write pointer (free-running)    */
+#define S1_RX_RSR0 0x0526  /* RX received size (2 bytes)         */
+#define S1_RX_RD0  0x0528  /* RX read pointer (free-running)     */
+
+/* --- Socket 1 TX/RX ring buffers ----------------------------------------- */
+#define S1_TX_BASE 0x4800u
+#define S1_TX_MASK 0x07FFu  /* 2 KB */
+#define S1_RX_BASE 0x6800u
+#define S1_RX_MASK 0x07FFu  /* 2 KB */
+
 /* --- Socket modes --------------------------------------------------------- */
 #define SMODE_TCP 0x01
+#define SMODE_UDP 0x02
+
+/* --- Socket status (additional) ------------------------------------------ */
+#define SSTAT_UDP 0x22
 
 /* -------------------------------------------------------------------------
  * Low-level register access
