@@ -15,11 +15,11 @@ echo "Assembling crt0..."
 $AS -o crt0.rel "$SRC/crt0.s"
 
 echo "Compiling..."
-$CC -mz80 --nostdlib --no-std-crt0 -c -o w5100.rel   "$SRC/w5100.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o netinit.rel "$SRC/netinit.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o udp.rel     "$SRC/udp.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o dns.rel     "$SRC/dns.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o main.rel    main.c
+$CC -mz80 --nostdlib --no-std-crt0 -DAMSDOS_USB -c -o w5100.rel   "$SRC/w5100.c"
+$CC -mz80 --nostdlib --no-std-crt0 -DAMSDOS_USB -c -o netinit.rel "$SRC/netinit.c"
+$CC -mz80 --nostdlib --no-std-crt0 -DAMSDOS_USB -c -o udp.rel     "$SRC/udp.c"
+$CC -mz80 --nostdlib --no-std-crt0 -DAMSDOS_USB -c -o dns.rel     "$SRC/dns.c"
+$CC -mz80 --nostdlib --no-std-crt0 -DAMSDOS_USB -c -o main.rel    main.c
 
 echo "Linking..."
 $CC -mz80 --nostdlib --no-std-crt0 \

@@ -24,20 +24,29 @@ static void write_bytes(unsigned int reg, const unsigned char *src,
 }
 
 /*
- * CAS firmware wrappers (USB drive: CAS IN routines shifted +3 from standard).
+ * CAS firmware wrappers.
  *
- * CAS_IN_OPEN  (0xBC77): B=filename length, HL=filename addr, A=&FF any type.
- *                        Returns carry set on success; CAS keeps internal state.
- * CAS_IN_DIRECT(0xBC83): no args; reads next raw byte from open stream.
- *                        Returns carry set + A=byte on success; carry clear=EOF.
- * CAS_IN_CLOSE (0xBC7A): no args; closes the currently open input stream.
+ * Build with -DAMSDOS_USB for USB/FAT drives (Albireo, GoTek with Unidos):
+ *   CAS IN routines are shifted +3 from the standard ROM addresses.
+ * Without -DAMSDOS_USB: standard AMSDOS addresses (ULIfAC, real floppy).
  *
- * AMSDOS sometimes prepends a 0xFF header byte — the first byte read is
- * discarded if it equals 0xFF.
+ * CAS_IN_OPEN:   B=filename length, HL=filename addr, A=&FF (any type).
+ *                Returns carry set on success; CAS keeps internal state.
+ * CAS_IN_DIRECT: no args; reads next raw byte from the open stream.
+ *                Returns carry set + A=byte; carry clear = EOF.
+ * CAS_IN_CLOSE:  no args; closes the currently open input stream.
+ *
+ * AMSDOS sometimes prepends a 0xFF header byte — discarded on open.
  */
+#ifdef AMSDOS_USB
 #define CAS_IN_OPEN   0xBC77
 #define CAS_IN_CLOSE  0xBC7A
 #define CAS_IN_DIRECT 0xBC83
+#else
+#define CAS_IN_OPEN   0xBC74
+#define CAS_IN_CLOSE  0xBC77
+#define CAS_IN_DIRECT 0xBC80
+#endif
 
 static const char cfg_filename[] = "N4C.CFG";
 
