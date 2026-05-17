@@ -8,30 +8,36 @@ MAKEBIN=$SDCC_BIN/makebin
 
 SRC=../../src
 OUT=../../bin
+OUT_ALB=../../bin/albireo
 
-mkdir -p "$OUT"
+mkdir -p "$OUT" "$OUT_ALB"
 
 echo "Assembling crt0..."
 $AS -o crt0.rel "$SRC/crt0.s"
 
-echo "Compiling..."
-$CC -mz80 --nostdlib --no-std-crt0 -c -o w5100.rel   "$SRC/w5100.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o netinit.rel "$SRC/netinit.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o net.rel     "$SRC/net.c"
-$CC -mz80 --nostdlib --no-std-crt0 -c -o main.rel    main.c
+compile() {
+    local usb=$1
+    echo "Compiling ($2)..."
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o w5100.rel   "$SRC/w5100.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o netinit.rel "$SRC/netinit.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o net.rel     "$SRC/net.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o main.rel    main.c
 
-echo "Linking..."
-$CC -mz80 --nostdlib --no-std-crt0 \
-    --code-loc 0x4000 \
-    --data-loc 0x7000 \
-    -o tcptest.ihx \
-    crt0.rel w5100.rel netinit.rel net.rel main.rel
+    echo "Linking ($2)..."
+    $CC -mz80 --nostdlib --no-std-crt0 \
+        --code-loc 0x4000 \
+        --data-loc 0x7000 \
+        -o tcptest.ihx \
+        crt0.rel w5100.rel netinit.rel net.rel main.rel
 
-echo "Converting to binary..."
-$MAKEBIN -p -o 0x4000 tcptest.ihx "$OUT/TCPTEST.BIN"
+    echo "Converting ($2)..."
+    $MAKEBIN -p -o 0x4000 tcptest.ihx "$3/TCPTEST.BIN"
+    ls -l "$3/TCPTEST.BIN"
+}
 
-ls -l "$OUT/TCPTEST.BIN"
+compile ""              "ULIfAC/floppy" "$OUT"
+compile "-DAMSDOS_USB"  "Albireo/USB"   "$OUT_ALB"
+
 echo ""
-echo "On the CPC:"
-echo '  LOAD "TCPTEST.BIN",0x4000'
-echo "  CALL 0x4000"
+echo "ULIfAC:  run TCPTEST.BAS on the CPC"
+echo "Albireo: LOAD \"TCPTEST.BIN\",0x4000 : CALL 0x4000"
