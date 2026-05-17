@@ -1,0 +1,10 @@
+# Build output
+bin/
+*.rel
+*.ihx
+*.map
+*.sym
+*.lst
+*.asm
+*.noi
+*.lk
