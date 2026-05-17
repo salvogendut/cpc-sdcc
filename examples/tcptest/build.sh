@@ -38,6 +38,9 @@ compile() {
 compile ""              "ULIfAC/floppy" "$OUT"
 compile "-DAMSDOS_USB"  "Albireo/USB"   "$OUT_ALB"
 
+cp TCPTEST.BAS  "$OUT/"
+cp TCPTESTA.BAS "$OUT_ALB/"
+
 echo ""
-echo "ULIfAC:  run TCPTEST.BAS on the CPC"
-echo "Albireo: LOAD \"TCPTEST.BIN\",0x4000 : CALL 0x4000"
+echo "ULIfAC:  run TCPTEST.BAS  from $OUT"
+echo "Albireo: run TCPTESTA.BAS from $OUT_ALB"

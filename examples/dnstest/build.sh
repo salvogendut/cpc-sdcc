@@ -39,6 +39,9 @@ compile() {
 compile ""              "ULIfAC/floppy" "$OUT"
 compile "-DAMSDOS_USB"  "Albireo/USB"   "$OUT_ALB"
 
+cp DNSTEST.BAS  "$OUT/"
+cp DNSTESTA.BAS "$OUT_ALB/"
+
 echo ""
-echo "ULIfAC:  run DNSTEST.BAS on the CPC"
-echo "Albireo: LOAD \"DNSTEST.BIN\",0x4000 : CALL 0x4000"
+echo "ULIfAC:  run DNSTEST.BAS  from $OUT"
+echo "Albireo: run DNSTESTA.BAS from $OUT_ALB"
