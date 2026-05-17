@@ -23,34 +23,20 @@ static void write_bytes(unsigned int reg, const unsigned char *src,
         w5100_write_reg(reg++, (unsigned int)*src++);
 }
 
-/*
- * CAS firmware wrappers.
- *
- * Build with -DAMSDOS_USB for USB/FAT drives (Albireo, GoTek with Unidos):
- *   CAS IN routines are shifted +3 from the standard ROM addresses.
- * Without -DAMSDOS_USB: standard AMSDOS addresses (ULIfAC, real floppy).
- *
- * CAS_IN_OPEN:   B=filename length, HL=filename addr, A=&FF (any type).
- *                Returns carry set on success; CAS keeps internal state.
- * CAS_IN_DIRECT: no args; reads next raw byte from the open stream.
- *                Returns carry set + A=byte; carry clear = EOF.
- * CAS_IN_CLOSE:  no args; closes the currently open input stream.
- *
- * AMSDOS sometimes prepends a 0xFF header byte — discarded on open.
- */
 #ifdef AMSDOS_USB
+
+/*
+ * USB/FAT build (Albireo, GoTek with Unidos ROM).
+ * CAS IN routines are shifted +3 from standard ROM addresses.
+ * net_init_from_file() opens N4C.CFG directly from the drive.
+ */
 #define CAS_IN_OPEN   0xBC77
 #define CAS_IN_CLOSE  0xBC7A
 #define CAS_IN_DIRECT 0xBC83
-#else
-#define CAS_IN_OPEN   0xBC74
-#define CAS_IN_CLOSE  0xBC77
-#define CAS_IN_DIRECT 0xBC80
-#endif
 
 static const char cfg_filename[] = "N4C.CFG";
 
-/* Returns 1 on success, 0 on failure. */
+/* Returns 1 on success, 0 if file not found. */
 static unsigned char cas_open(void) __naked {
     __asm
         ld      hl, #_cfg_filename
@@ -67,7 +53,7 @@ static unsigned char cas_open(void) __naked {
     __endasm;
 }
 
-/* Returns next byte (0xFF = EOF sentinel). */
+/* Returns next raw byte; 0xFF sentinel = EOF. */
 static unsigned char cas_readbyte(void) __naked {
     __asm
         call    CAS_IN_DIRECT
@@ -85,8 +71,7 @@ static void cas_close(void) __naked {
     __endasm;
 }
 
-/* Parse "a.b.c.d" into a 4-byte array. p points to first digit.
- * Returns pointer to first char after the last digit. */
+/* Parse "a.b.c.d" starting at p; returns pointer past last digit. */
 static const char *parse_ip(const char *p, unsigned char *out) {
     unsigned char i, v;
     for (i = 0; i < 4; i++) {
@@ -122,21 +107,14 @@ int net_init_from_file(void) {
     /* Discard AMSDOS 0xFF header byte if present */
     c = cas_readbyte();
     if (c != 0xFF)
-        goto process;   /* not a header byte — process it as data */
-
-    /* It was an AMSDOS header: read and discard the rest (128 bytes total)
-     * but we only need to skip 127 more since we already read one.
-     * Actually just skip the first byte and proceed normally — if it was
-     * truly an AMSDOS binary header the content will be garbage anyway.
-     * The n4c-netinit-kv.s approach: if byte[0]==0xFF shift buffer left 1.
-     * Here: simply discard the first byte (already done) and continue. */
+        goto process;
     c = cas_readbyte();
 
 process:
     pos = 0;
     for (;;) {
         if (c == 0xFF)
-            break;          /* EOF */
+            break;
         if (c == '\r') {
             c = cas_readbyte();
             continue;
@@ -164,6 +142,39 @@ process:
     cas_close();
     return net_init(&cfg);
 }
+
+#else  /* !AMSDOS_USB — ULIfAC / real floppy */
+
+/*
+ * Standard AMSDOS build.
+ * The BASIC loader reads N4C.CFG via OPENIN and POKEs 16 bytes into RAM:
+ *   &3F10  IP[0..3]
+ *   &3F14  MASK[0..3]
+ *   &3F18  GW[0..3]
+ *   &3F1C  DNS[0..3]
+ * net_init_from_file() simply reads those bytes and calls net_init().
+ */
+#define CFG_RAM_BASE 0x3F10
+
+int net_init_from_file(void) {
+    static net_config_t cfg = {
+        { 0, 0, 0, 0 },
+        { 0, 0, 0, 0 },
+        { 0, 0, 0, 0 },
+        { 0, 0, 0, 0 },
+        { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF }
+    };
+    const unsigned char *p = (const unsigned char *)CFG_RAM_BASE;
+    unsigned char i;
+    for (i = 0; i < 4; i++) cfg.ip[i]      = p[i];
+    for (i = 0; i < 4; i++) cfg.netmask[i]  = p[4 + i];
+    for (i = 0; i < 4; i++) cfg.gateway[i]  = p[8 + i];
+    for (i = 0; i < 4; i++) cfg.dns[i]      = p[12 + i];
+    /* Translate net_init() chip-absent (-1) to our -2 error code */
+    return net_init(&cfg) ? -2 : 0;
+}
+
+#endif /* AMSDOS_USB */
 
 int net_init(const net_config_t *cfg) {
     if (!chip_present())
