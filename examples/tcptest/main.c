@@ -2,17 +2,6 @@
 #include "../../src/netinit.h"
 #include "../../src/net.h"
 
-/* -----------------------------------------------------------------------
- * Edit these to match your network.
- * ----------------------------------------------------------------------- */
-static const net_config_t cfg = {
-    { 192, 168,   1, 100 },   /* ip      */
-    { 255, 255, 255,   0 },   /* netmask */
-    { 192, 168,   1,   1 },   /* gateway */
-    {   8,   8,   8,   8 },   /* dns     */
-    { 0x00, 0x08, 0xDC, 0x01, 0x02, 0x03 }  /* mac */
-};
-
 /* Connect to this server and do an HTTP GET / */
 static const unsigned char server_ip[4] = { 93, 184, 216, 34 }; /* example.com */
 #define SERVER_PORT 80
@@ -23,12 +12,9 @@ static const char http_request[] =
     "Connection: close\r\n"
     "\r\n";
 
-/* ----------------------------------------------------------------------- */
-
 static unsigned char rxbuf[256];
 
 static void print_uint(unsigned int n) {
-    /* subtraction-based decimal print — avoids __divuint from stdlib */
     static const unsigned int powers[5] = { 10000, 1000, 100, 10, 1 };
     unsigned char i, d, leading = 1;
     for (i = 0; i < 5; i++) {
@@ -39,14 +25,20 @@ static void print_uint(unsigned int n) {
 
 void main(void) {
     unsigned int received, total;
+    int rc;
 
     cpc_set_mode(1);
     cpc_cls();
     cpc_print("TCP test\r\n");
 
-    cpc_print("Init net... ");
-    if (net_init(&cfg)) {
-        cpc_print("FAIL (no chip?)\r\n");
+    cpc_print("Reading N4C.CFG... ");
+    rc = net_init_from_file();
+    if (rc == -1) {
+        cpc_print("file not found\r\n");
+        return;
+    }
+    if (rc == -2) {
+        cpc_print("no chip\r\n");
         return;
     }
     cpc_print("OK\r\n");
@@ -68,7 +60,7 @@ void main(void) {
 
     cpc_print("Sending GET...\r\n");
     net_send((const unsigned char *)http_request,
-             sizeof(http_request) - 1);   /* -1: don't send the NUL */
+             sizeof(http_request) - 1);
 
     cpc_print("Response:\r\n");
     total = 0;
@@ -78,7 +70,6 @@ void main(void) {
             unsigned int i;
             for (i = 0; i < received; i++) {
                 unsigned char c = rxbuf[i];
-                /* print printable ASCII and CR/LF; suppress other controls */
                 if (c >= 0x20 || c == '\r' || c == '\n')
                     cpc_print_char(c);
             }

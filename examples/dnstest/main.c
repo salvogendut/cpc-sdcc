@@ -2,24 +2,10 @@
 #include "../../src/netinit.h"
 #include "../../src/dns.h"
 
-/* -----------------------------------------------------------------------
- * Edit these to match your network.
- * ----------------------------------------------------------------------- */
-static const net_config_t cfg = {
-    { 192, 168,   1, 100 },   /* ip      */
-    { 255, 255, 255,   0 },   /* netmask */
-    { 192, 168,   1,   1 },   /* gateway */
-    {   8,   8,   8,   8 },   /* dns     */
-    { 0x00, 0x08, 0xDC, 0x01, 0x02, 0x03 }  /* mac */
-};
-
 static const unsigned char dns_server[4] = { 8, 8, 8, 8 };
 static const char hostname[] = "example.com";
 
-/* ----------------------------------------------------------------------- */
-
 static void print_byte_dec(unsigned char n) {
-    /* subtraction-based decimal — avoids __divuint from stdlib */
     unsigned char d;
     unsigned char leading = 1;
 
@@ -47,9 +33,14 @@ void main(void) {
     cpc_cls();
     cpc_print("DNS test\r\n");
 
-    cpc_print("Init net... ");
-    if (net_init(&cfg)) {
-        cpc_print("FAIL (no chip?)\r\n");
+    cpc_print("Reading N4C.CFG... ");
+    rc = net_init_from_file();
+    if (rc == -1) {
+        cpc_print("file not found\r\n");
+        return;
+    }
+    if (rc == -2) {
+        cpc_print("no chip\r\n");
         return;
     }
     cpc_print("OK\r\n");
@@ -68,7 +59,7 @@ void main(void) {
         cpc_print("TIMEOUT\r\n");
     } else {
         cpc_print("FAIL (");
-        cpc_print_char('0' - rc);   /* -1..-4 -> '1'..'4' */
+        cpc_print_char('0' - rc);
         cpc_print(")\r\n");
     }
 
