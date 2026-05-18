@@ -51,4 +51,20 @@ static char cpc_wait_key(void) __naked {
     __endasm;
 }
 
+/* Returns elapsed milliseconds from the CPC 50 Hz frame counter at 0xB5CB.
+ * Wraps at 65535 ms (~65 s). Interrupts must be enabled (they are under BASIC). */
+static unsigned int cpc_time_ms(void) __naked {
+    __asm
+        ld      hl, (#0xB5CB)
+        add     hl, hl
+        add     hl, hl
+        ld      b, h
+        ld      c, l
+        add     hl, hl
+        add     hl, hl
+        add     hl, bc
+        ret
+    __endasm;
+}
+
 #endif /* CPCBIOS_H */
