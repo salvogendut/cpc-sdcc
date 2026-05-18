@@ -2,7 +2,8 @@
 
 C development for the Amstrad CPC using [SDCC](https://sdcc.sourceforge.net/), targeting the Z80.  
 Includes a W5100S Ethernet driver for the [Net4CPC](https://www.cpcwiki.eu/index.php/Net4CPC) hardware,
-with TCP, UDP/DNS support, an HTTP file downloader (wget), and an NTP time client.
+with TCP, UDP/DNS support, an HTTP file downloader (wget), an NTP time client, an ANSI telnet client,
+and a telnet daemon that hooks the CPC firmware to serve an interactive BASIC session over TCP.
 
 ## Prerequisites
 
@@ -33,6 +34,12 @@ examples/
   wget/         HTTP file downloader — prompts for URL, saves file to disk
   ntp/          NTP/SNTP time client — resolves time.cloudflare.com,
                 displays current UTC date and time
+  telnet/       ANSI/VT100 telnet client — Mode 2 (80×25) direct screen
+                writes, Code Page 437 charset, hardware scroll, ESC[ cursor
+                movement / erase / SGR colour support
+  telnetd/      Telnet daemon — patches TXT_OUTPUT and KM_READ_CHAR in the
+                CPC firmware jump table to mirror BASIC's I/O over TCP;
+                returns to BASIC which then drives the remote session
 ```
 
 ## Building
@@ -62,12 +69,24 @@ cd examples/ntp && ./build.sh
 # bin/NTP.BIN + bin/NTP.BAS
 # bin/albireo/NTP.BIN + bin/albireo/NTPA.BAS
 
+cd examples/telnet && ./build.sh
+# bin/TELNET.BIN + bin/CHARSET.BIN + bin/TELNET.BAS
+# bin/albireo/TELNET.BIN + bin/albireo/CHARSET.BIN + bin/albireo/TELNETA.BAS
+
+cd examples/telnetd && ./build.sh
+# bin/TELNETD.BIN + bin/TELNETD.BAS
+# bin/albireo/TELNETD.BIN + bin/albireo/TELNETDA.BAS
+
 cd examples/hello && ./build.sh
 # bin/HELLO.BIN + bin/HELLO.BAS
 ```
 
 Copy all files from the relevant output directory to a CPC disk and
 `RUN` the `.BAS` loader.
+
+**telnet** requires three files: `TELNET.BIN`, `CHARSET.BIN`, and `N4C.CFG`.
+The BASIC loader loads `TELNET.BIN` first (its padding zeros 0x6800–0x6FFF),
+then loads `CHARSET.BIN` at `&6800` to restore the Code Page 437 bitmaps.
 
 ## Network configuration — N4C.CFG
 
@@ -224,6 +243,7 @@ asm.  Use the register the calling convention already places the argument in.
 | 0x3F00–0x3F0D   | wget: filename, length, port (filled by BASIC loader)      |
 | 0x3F10–0x3F1F   | N4C.CFG config block (ULIfAC build, filled by BASIC loader)|
 | 0x4000–0x6FFF   | Program code (`--code-loc 0x4000`)                         |
+| 0x6800–0x6FFF   | telnet: Code Page 437 charset (loaded by BASIC at runtime) |
 | 0x7000–0xBFEF   | Static data and BSS (`--data-loc 0x7000`)                  |
 | 0xBFF0–0xBFFF   | Stack (grows down from 0xBFF0)                             |
 | 0xC000–0xFFFF   | Screen RAM + upper ROM                                     |
