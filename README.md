@@ -43,7 +43,7 @@ in a single run:
 | Output directory | Target hardware          | BASIC loader   |
 |------------------|--------------------------|----------------|
 | `bin/`           | ULIfAC / real floppy     | `NAME.BAS`     |
-| `bin/albireo/`   | Albireo / GoTek (Unidos) | `NAMEA.BAS`    |
+| `bin/albireo/`   | Albireo (Unidos)      | `NAMEA.BAS`    |
 
 ```bash
 cd examples/tcptest && ./build.sh
@@ -90,7 +90,7 @@ and POKEs the parsed addresses into RAM at `&3F10`–`&3F1F` before calling
 the binary.  The binary itself reads those 16 bytes directly; no file I/O
 in machine code.
 
-**Albireo / GoTek (Unidos ROM)** — the binary opens `N4C.CFG` itself via
+**Albireo (Unidos)** — the binary opens `N4C.CFG` itself via
 `CAS_IN_DIRECT`.  The BASIC loader just sets the screen mode, loads the
 binary, and calls it.  The USB/FAT AMSDOS shifts CAS IN routine addresses
 by +3 from the standard ROM; this is handled at compile time with
