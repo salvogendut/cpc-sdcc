@@ -3,7 +3,9 @@
 C development for the Amstrad CPC using [SDCC](https://sdcc.sourceforge.net/), targeting the Z80.  
 Includes a W5100S Ethernet driver for the [Net4CPC](https://www.cpcwiki.eu/index.php/Net4CPC) hardware,
 with TCP, UDP/DNS support, an HTTP file downloader (wget), an NTP time client, an ANSI telnet client,
-and a telnet daemon that hooks the CPC firmware to serve an interactive BASIC session over TCP.
+a telnet daemon that hooks the CPC firmware to serve an interactive BASIC session over TCP,
+and a static HTTP server that pre-loads files into iRAM1024 expansion RAM and serves them
+concurrently over four TCP sockets.
 
 ## Prerequisites
 
@@ -19,12 +21,17 @@ src/
   cpcbios.h     CPC firmware wrappers: cpc_print_char, cpc_print,
                 cpc_cls, cpc_set_mode, cpc_wait_key, cpc_time_ms
   amsdos.h      AMSDOS file output wrappers: cas_out_open/char/close/abandon
+  amsdos_in.h/c AMSDOS file input wrappers: cas_in_open/readbyte/close
+                (handles standard and -DAMSDOS_USB shifted addresses)
   w5100.h       W5100S register map and low-level I/O prototypes
   w5100.c       w5100_read_reg / w5100_write_reg (__naked asm), buffer ops
   netinit.h/c   Network init: net_init() and net_init_from_file()
   net.h/c       TCP socket API (socket 0): open/connect/send/recv/close
+  net_multi.h/c Multi-socket TCP API (sockets 0-3): listen/send/recv/close
+                parameterised by socket number; uses SREG/STX_BASE/SRX_BASE macros
   udp.h/c       UDP socket API (socket 1): open/sendto/recv/close
   dns.h/c       DNS A-record resolver: dns_resolve()
+  bank.h/c      iRAM1024 DK'Tronics banking driver: bank_select/bank_restore
   amsdos_wrap.py  Adds 128-byte AMSDOS type-2 binary header to a raw binary
 
 examples/
@@ -40,6 +47,10 @@ examples/
   telnetd/      Telnet daemon — patches TXT_OUTPUT and KM_READ_CHAR in the
                 CPC firmware jump table to mirror BASIC's I/O over TCP;
                 returns to BASIC which then drives the remote session
+  httpd/        Static HTTP server — reads HTTPD.MAN manifest at startup,
+                loads web files into iRAM1024 expansion RAM (banks 1-7,
+                up to 112 KB), then serves HTTP/1.0 GET requests on port 80
+                over all four W5100S sockets concurrently (round-robin poll)
 ```
 
 ## Building
@@ -77,6 +88,10 @@ cd examples/telnetd && ./build.sh
 # bin/TELNETD.BIN + bin/TELNETD.BAS
 # bin/albireo/TELNETD.BIN + bin/albireo/TELNETDA.BAS
 
+cd examples/httpd && ./build.sh
+# bin/HTTPD.BIN + bin/HTTPD.BAS
+# bin/albireo/HTTPD.BIN + bin/albireo/HTTDPA.BAS
+
 cd examples/hello && ./build.sh
 # bin/HELLO.BIN + bin/HELLO.BAS
 ```
@@ -87,6 +102,10 @@ Copy all files from the relevant output directory to a CPC disk and
 **telnet** requires three files: `TELNET.BIN`, `CHARSET.BIN`, and `N4C.CFG`.
 The BASIC loader loads `TELNET.BIN` first (its padding zeros 0x6800–0x6FFF),
 then loads `CHARSET.BIN` at `&6800` to restore the Code Page 437 bitmaps.
+
+**httpd** requires `HTTPD.BIN`, `N4C.CFG`, `HTTPD.MAN`, and all web files listed
+in the manifest — all on the same CPC disk.  The binary reads everything itself
+at startup (no BASIC config-reading helper needed).
 
 ## Network configuration — N4C.CFG
 
@@ -114,6 +133,11 @@ in machine code.
 binary, and calls it.  The USB/FAT AMSDOS shifts CAS IN routine addresses
 by +3 from the standard ROM; this is handled at compile time with
 `-DAMSDOS_USB` (added automatically by the Albireo build pass).
+
+**httpd (both targets)** — the binary always reads `N4C.CFG` itself, so
+both builds use a minimal one-line BASIC loader.  The ULIfAC build is
+compiled with `-DAMSDOS_STD` (standard CAS IN addresses); the Albireo
+build with `-DAMSDOS_USB` as usual.
 
 ## API reference
 
@@ -191,6 +215,85 @@ void cas_out_abandon(void);
 
 CAS_OUT addresses are standard on both ULIfAC and Albireo (no shift).
 
+### AMSDOS file input (`src/amsdos_in.h`)
+
+```c
+/* Open file for reading. flen declared unsigned int so sdcccall(1) passes
+ * it in DE (avoids pushed-char stack cleanup in __naked asm).
+ * Returns 1 on success, 0 if not found. */
+unsigned char cas_in_open(const char *fname, unsigned int flen);
+
+/* Read next byte. Returns 0-255 on success, -1 on EOF/error. */
+int cas_in_readbyte(void);
+
+/* Close the open input file. */
+void cas_in_close(void);
+```
+
+Compile with `-DAMSDOS_USB` for Albireo (CAS IN shifted +3) or without
+for standard AMSDOS / ULIfAC.
+
+### Multi-socket TCP (`src/net_multi.h`)
+
+For use when all four W5100S sockets are needed (e.g. the httpd).
+
+```c
+/* Macros — compute W5100S addresses from socket number s (0-3) */
+#define SREG(s, off)  /* socket register address */
+#define STX_BASE(s)   /* TX ring buffer base */
+#define SRX_BASE(s)   /* RX ring buffer base */
+
+int          tcp_listen_sock(unsigned char s, unsigned int port);
+unsigned char tcp_get_status_sock(unsigned char s);
+int          tcp_send_sock(unsigned char s, const unsigned char *buf,
+                           unsigned int len);
+unsigned int tcp_recv_sock(unsigned char s, unsigned char *buf,
+                           unsigned int maxlen);
+unsigned int tcp_rx_available_sock(unsigned char s);
+unsigned int tcp_tx_free_sock(unsigned char s);
+void         tcp_close_sock(unsigned char s);
+```
+
+### iRAM1024 banking (`src/bank.h`)
+
+For the [iRAM1024](https://github.com/etomuc/CPC464-iRAM1024) DK'Tronics
+compatible 1 MB expansion RAM.  Banks 1–7 × 16 KB = 112 KB usable storage
+(bank 0 is the built-in CPC RAM).
+
+```c
+#define BANK_CFG_C000  1u   /* map 16 KB of bank to &C000-&FFFF */
+
+/* Select bank (1-7) at the given config window.
+ * cfg declared unsigned int so sdcccall(1) passes it in DE. */
+void bank_select(unsigned char bank, unsigned int cfg);
+
+/* Restore normal CPC RAM at &C000 (write 0 to port &7F). */
+void bank_restore(void);
+```
+
+When a bank is selected, `&C000–&FFFF` contains expansion RAM.  Code at
+`&4000+` and I/O port accesses (W5100S at `&FD20–&FD23`) are unaffected,
+so `tcp_send_sock` can safely be called with a pointer into `&C000` to
+stream file data directly from expansion RAM to the network chip.
+
+### httpd manifest — HTTPD.MAN
+
+Plain-text file (CR+LF), one entry per line:
+
+```
+/=INDEX.HTM
+/index.htm=INDEX.HTM
+/about.htm=ABOUT.HTM
+/style.css=STYLE.CSS
+/logo.gif=LOGO.GIF
+```
+
+URL path (left of `=`) up to 13 characters; CPC filename (right) up to 12
+characters (8.3 format).  MIME type is inferred from the URL extension
+(`htm`/`html` → `text/html`, `css`, `gif`, `jpg`, `txt`, else octet-stream).
+Up to 24 files.  Files with an AMSDOS binary header (first byte `0xFF`) have
+the full 128-byte header stripped automatically on load.
+
 ## W5100S hardware (Net4CPC)
 
 | Port   | Purpose                        |
@@ -200,12 +303,18 @@ CAS_OUT addresses are standard on both ULIfAC and Albireo (no shift).
 | 0xFD22 | Low address byte               |
 | 0xFD23 | Data (auto-increments address) |
 
-Socket 0 is used for TCP.  Socket 1 is used for UDP/DNS.
+Socket 0 is used for TCP.  Socket 1 is used for UDP/DNS.  The httpd uses
+all four sockets for concurrent HTTP connections.
 
-| Socket | TX base | RX base | Size |
-|--------|---------|---------|------|
-| 0 (TCP)| 0x4000  | 0x6000  | 2 KB |
-| 1 (UDP)| 0x4800  | 0x6800  | 2 KB |
+| Socket      | TX base | RX base | Size |
+|-------------|---------|---------|------|
+| 0 (TCP)     | 0x4000  | 0x6000  | 2 KB |
+| 1 (UDP/DNS) | 0x4800  | 0x6800  | 2 KB |
+| 2 (httpd)   | 0x5000  | 0x7000  | 2 KB |
+| 3 (httpd)   | 0x5800  | 0x7800  | 2 KB |
+
+`N_TMSR` (0x001B) and `N_RMSR` (0x001C) are both written to `0x55` by
+`net_init()` to explicitly allocate 2 KB per socket on all four sockets.
 
 ## Calling convention notes
 
