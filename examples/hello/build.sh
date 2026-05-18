@@ -25,10 +25,15 @@ $CC -mz80 --nostdlib --no-std-crt0 \
     crt0.rel main.rel
 
 echo "Converting to binary..."
-$MAKEBIN -p -o 0x4000 hello.ihx "$OUT/HELLO.BIN"
+$MAKEBIN -p -o 0x4000 hello.ihx /tmp/hello_raw.bin
+python3 "$SRC/amsdos_wrap.py" /tmp/hello_raw.bin "$OUT/HELLO.BIN" 4000
+rm -f /tmp/hello_raw.bin
+ls -l "$OUT/HELLO.BIN"
 
-echo "Done: $OUT/HELLO.BIN"
+cp HELLO.BAS "$OUT/"
+
+echo "Fixing CR+LF line endings in .BAS file..."
+perl -pi -e 's/\r?\n/\r\n/' "$OUT/HELLO.BAS"
+
 echo ""
-echo "On the CPC:"
-echo '  LOAD "HELLO.BIN",0x4000'
-echo "  CALL 0x4000"
+echo "On the CPC: RUN \"HELLO.BAS\""

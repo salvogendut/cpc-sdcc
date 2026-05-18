@@ -6,5 +6,4 @@ void main(void) {
     cpc_print("Hello, CPC!\r\n");
     cpc_print("Built with SDCC.\r\n");
 
-    while (1) {}                /* spin; reset CPC to return to BASIC */
 }
