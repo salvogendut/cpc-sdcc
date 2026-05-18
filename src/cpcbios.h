@@ -43,4 +43,12 @@ static void cpc_print(const char *s) {
         cpc_print_char(*s++);
 }
 
+/* Wait for a keypress and return the ASCII code (KM_WAIT_CHAR). */
+static char cpc_wait_key(void) __naked {
+    __asm
+        call 0xBB06
+        ret
+    __endasm;
+}
+
 #endif /* CPCBIOS_H */
