@@ -2,7 +2,7 @@
 
 C development for the Amstrad CPC using [SDCC](https://sdcc.sourceforge.net/), targeting the Z80.  
 Includes a W5100S Ethernet driver for the [Net4CPC](https://www.cpcwiki.eu/index.php/Net4CPC) hardware,
-with TCP and UDP/DNS support.
+with TCP, UDP/DNS support, and an HTTP file downloader (wget).
 
 ## Prerequisites
 
@@ -13,19 +13,24 @@ with TCP and UDP/DNS support.
 
 ```
 src/
-  crt0.s        Startup stub: sets SP=0xBFF0, calls main(), halts
-  cpcbios.h     CPC firmware wrappers (TXT_OUTPUT, SCR_SET_MODE, CLS)
+  crt0.s        Startup stub: saves BASIC SP, sets SP=0xBFF0, runs
+                static initialisers (gsinit), calls main(), returns to BASIC
+  cpcbios.h     CPC firmware wrappers: cpc_print_char, cpc_print,
+                cpc_cls, cpc_set_mode, cpc_wait_key
+  amsdos.h      AMSDOS file output wrappers: cas_out_open/char/close/abandon
   w5100.h       W5100S register map and low-level I/O prototypes
   w5100.c       w5100_read_reg / w5100_write_reg (__naked asm), buffer ops
   netinit.h/c   Network init: net_init() and net_init_from_file()
   net.h/c       TCP socket API (socket 0): open/connect/send/recv/close
   udp.h/c       UDP socket API (socket 1): open/sendto/recv/close
   dns.h/c       DNS A-record resolver: dns_resolve()
+  amsdos_wrap.py  Adds 128-byte AMSDOS type-2 binary header to a raw binary
 
 examples/
-  hello/        Prints "Hello, CPC!" using firmware text output
+  hello/        Prints "Hello, CPC!" and returns to BASIC
   tcptest/      Opens a TCP connection and performs an HTTP GET
   dnstest/      Resolves a hostname via DNS and prints the IP
+  wget/         HTTP file downloader — prompts for URL, saves file to disk
 ```
 
 ## Building
@@ -33,34 +38,30 @@ examples/
 Each example has its own `build.sh` that produces **two sets of binaries**
 in a single run:
 
-| Output directory | Target hardware         | How to run          |
-|------------------|-------------------------|---------------------|
-| `bin/`           | ULIfAC / real floppy    | Run the `.BAS` file |
-| `bin/albireo/`   | Albireo / GoTek (Unidos)| Run the `.BAS` file |
+| Output directory | Target hardware          | BASIC loader   |
+|------------------|--------------------------|----------------|
+| `bin/`           | ULIfAC / real floppy     | `NAME.BAS`     |
+| `bin/albireo/`   | Albireo / GoTek (Unidos) | `NAMEA.BAS`    |
 
 ```bash
-cd examples/tcptest
-./build.sh
-# produces bin/TCPTEST.BIN + bin/TCPTEST.BAS
-#      and bin/albireo/TCPTEST.BIN + bin/albireo/TCPTESTA.BAS
+cd examples/tcptest && ./build.sh
+# bin/TCPTEST.BIN + bin/TCPTEST.BAS
+# bin/albireo/TCPTEST.BIN + bin/albireo/TCPTESTA.BAS
 
-cd examples/dnstest
-./build.sh
-# produces bin/DNSTEST.BIN + bin/DNSTEST.BAS
-#      and bin/albireo/DNSTEST.BIN + bin/albireo/DNSTESTA.BAS
+cd examples/dnstest && ./build.sh
+# bin/DNSTEST.BIN + bin/DNSTEST.BAS
+# bin/albireo/DNSTEST.BIN + bin/albireo/DNSTESTA.BAS
+
+cd examples/wget && ./build.sh
+# bin/WGET.BIN + bin/WGET.BAS
+# bin/albireo/WGET.BIN + bin/albireo/WGETA.BAS
+
+cd examples/hello && ./build.sh
+# bin/HELLO.BIN + bin/HELLO.BAS
 ```
 
-Copy all files from the relevant output directory to a CPC disk and run
-the `.BAS` loader.  For the hello example there is no network dependency:
-
-```bash
-cd examples/hello
-./build.sh      # produces bin/HELLO.BIN
-```
-
-```
-LOAD "HELLO.BIN",0x4000 : CALL 0x4000
-```
+Copy all files from the relevant output directory to a CPC disk and
+`RUN` the `.BAS` loader.
 
 ## Network configuration — N4C.CFG
 
@@ -135,6 +136,35 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
                 unsigned char *result_ip);
 ```
 
+### CPC firmware (`src/cpcbios.h`)
+
+```c
+void cpc_print_char(char c);       /* TXT_OUTPUT */
+void cpc_print(const char *s);     /* print null-terminated string */
+void cpc_cls(void);                /* clear text window */
+void cpc_set_mode(char mode);      /* 0=160x200/16col, 1=320x200/4col, 2=640x200/2col */
+char cpc_wait_key(void);           /* KM_WAIT_CHAR — blocks until keypress */
+```
+
+### AMSDOS file output (`src/amsdos.h`)
+
+```c
+/* Open new output file. fname = null-terminated name, flen = length.
+ * Returns 1 on success, 0 on failure. */
+unsigned char cas_out_open(const char *fname, int flen);
+
+/* Write one byte. Returns 1 on success, 0 on failure (disk full?). */
+unsigned char cas_out_char(char c);
+
+/* Close file (renames .$$$ to final name). Returns 1 on success. */
+unsigned char cas_out_close(void);
+
+/* Discard file without renaming — use on error to clean up. */
+void cas_out_abandon(void);
+```
+
+CAS_OUT addresses are standard on both ULIfAC and Albireo (no shift).
+
 ## W5100S hardware (Net4CPC)
 
 | Port   | Purpose                        |
@@ -169,6 +199,10 @@ SDCC 4.x with `-mz80` uses **sdcccall(1)** by default:
 SDCC passes it in DE — the low byte E is then used directly in `OUT (C), E`.
 Declaring it as `unsigned char` would cause SDCC to push it on the stack instead.
 
+`cas_out_open` declares `flen` as `int` for the same reason — it lands in DE/E,
+avoiding the `(ptr, char)` path where the char is pushed and requires manual
+stack cleanup in `__naked` asm.
+
 `__naked` functions used for firmware calls must not use `4(ix)` to access
 parameters — SDCC omits the IX frame for functions whose body is pure inline
 asm.  Use the register the calling convention already places the argument in.
@@ -178,6 +212,9 @@ asm.  Use the register the calling convention already places the argument in.
 | Range           | Use                                                        |
 |-----------------|------------------------------------------------------------|
 | 0x0000–0x3FFF   | Lower ROM (BASIC/firmware)                                 |
+| 0x3E00–0x3E7F   | wget: hostname (filled by BASIC loader)                    |
+| 0x3E80–0x3EFF   | wget: path (filled by BASIC loader)                        |
+| 0x3F00–0x3F0D   | wget: filename, length, port (filled by BASIC loader)      |
 | 0x3F10–0x3F1F   | N4C.CFG config block (ULIfAC build, filled by BASIC loader)|
 | 0x4000–0x6FFF   | Program code (`--code-loc 0x4000`)                         |
 | 0x7000–0xBFEF   | Static data and BSS (`--data-loc 0x7000`)                  |
