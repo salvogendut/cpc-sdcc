@@ -8,3 +8,6 @@ bin/
 *.asm
 *.noi
 *.lk
+
+# Claude Code memory
+.claude/
