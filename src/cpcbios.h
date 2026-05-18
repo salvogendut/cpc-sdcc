@@ -43,6 +43,21 @@ static void cpc_print(const char *s) {
         cpc_print_char(*s++);
 }
 
+/* Non-blocking key check (KM_READ_CHAR).
+ * Returns the ASCII code if a key is available, -1 if not. */
+static int cpc_read_key(void) __naked {
+    __asm
+        call    0xBB09
+        jr      c, 00001$
+        ld      hl, #-1
+        ret
+    00001$:
+        ld      l, a
+        ld      h, #0
+        ret
+    __endasm;
+}
+
 /* Wait for a keypress and return the ASCII code (KM_WAIT_CHAR). */
 static char cpc_wait_key(void) __naked {
     __asm

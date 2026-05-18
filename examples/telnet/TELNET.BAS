@@ -1,0 +1,33 @@
+10 MEMORY &3DFF
+20 PRINT "TELNET for Net4CPC"
+30 PRINT "=================="
+40 PRINT
+50 INPUT "Host: ";hst$
+60 IF hst$="" THEN PRINT "Cancelled.":END
+70 prt=23
+80 PRINT "Port (ENTER for 23): ";
+90 INPUT pt$
+100 IF pt$<>"" THEN prt=VAL(pt$)
+110 IF prt=0 THEN prt=23
+120 REM Write hostname to &3E00
+130 addr=&3E00
+140 FOR i=1 TO LEN(hst$):POKE addr,ASC(MID$(hst$,i,1)):addr=addr+1:NEXT i
+150 POKE addr,0
+160 POKE &3F0C,prt MOD 256
+170 POKE &3F0D,INT(prt/256)
+180 GOSUB 9000
+190 LOAD "TELNET.BIN",&4000
+200 CALL &4000
+210 END
+9000 OPENIN "N4C.CFG"
+9010 ba=&3F10:GOSUB 9100
+9020 ba=&3F14:GOSUB 9100
+9030 ba=&3F18:GOSUB 9100
+9040 ba=&3F1C:GOSUB 9100
+9050 CLOSEIN:RETURN
+9100 INPUT #9,a$:IF a$="" THEN 9100
+9110 eq=INSTR(a$,"="):a$=MID$(a$,eq+1)
+9120 p=1:FOR oc=0 TO 3
+9130 q=INSTR(p,a$,"."):IF q=0 THEN q=LEN(a$)+1
+9140 POKE ba+oc,VAL(MID$(a$,p,q-p)):p=q+1
+9150 NEXT oc:RETURN
