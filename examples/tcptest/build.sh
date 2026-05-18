@@ -31,7 +31,9 @@ compile() {
         crt0.rel w5100.rel netinit.rel net.rel main.rel
 
     echo "Converting ($2)..."
-    $MAKEBIN -p -o 0x4000 tcptest.ihx "$3/TCPTEST.BIN"
+    $MAKEBIN -p -o 0x4000 tcptest.ihx /tmp/tcptest_raw.bin
+    python3 "$SRC/amsdos_wrap.py" /tmp/tcptest_raw.bin "$3/TCPTEST.BIN" 4000
+    rm -f /tmp/tcptest_raw.bin
     ls -l "$3/TCPTEST.BIN"
 }
 
@@ -40,6 +42,11 @@ compile "-DAMSDOS_USB"  "Albireo/USB"   "$OUT_ALB"
 
 cp TCPTEST.BAS  "$OUT/"
 cp TCPTESTA.BAS "$OUT_ALB/"
+
+echo "Fixing CR+LF line endings in .BAS files..."
+for f in "$OUT/TCPTEST.BAS" "$OUT_ALB/TCPTESTA.BAS"; do
+    perl -pi -e 's/\r?\n/\r\n/' "$f"
+done
 
 echo ""
 echo "ULIfAC:  run TCPTEST.BAS  from $OUT"

@@ -1,8 +1,8 @@
 #include "../../src/cpcbios.h"
 #include "../../src/netinit.h"
 #include "../../src/dns.h"
+#include "../../src/w5100.h"
 
-static const unsigned char dns_server[4] = { 8, 8, 8, 8 };
 static const char hostname[] = "example.com";
 
 static void print_byte_dec(unsigned char n) {
@@ -26,6 +26,7 @@ static void print_ip(const unsigned char *ip) {
 }
 
 void main(void) {
+    unsigned char dns_server[4];
     unsigned char result[4];
     int rc;
 
@@ -45,6 +46,15 @@ void main(void) {
     }
     cpc_print("OK\r\n");
 
+    dns_server[0] = w5100_read_reg(N_DNS0);
+    dns_server[1] = w5100_read_reg(N_DNS0 + 1);
+    dns_server[2] = w5100_read_reg(N_DNS0 + 2);
+    dns_server[3] = w5100_read_reg(N_DNS0 + 3);
+
+    cpc_print("DNS: ");
+    print_ip(dns_server);
+    cpc_print("\r\n");
+
     cpc_print("Resolving: ");
     cpc_print(hostname);
     cpc_print("\r\n");
@@ -62,6 +72,4 @@ void main(void) {
         cpc_print_char('0' - rc);
         cpc_print(")\r\n");
     }
-
-    while (1) {}
 }

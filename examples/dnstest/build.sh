@@ -32,7 +32,9 @@ compile() {
         crt0.rel w5100.rel netinit.rel udp.rel dns.rel main.rel
 
     echo "Converting ($2)..."
-    $MAKEBIN -p -o 0x4000 dnstest.ihx "$3/DNSTEST.BIN"
+    $MAKEBIN -p -o 0x4000 dnstest.ihx /tmp/dnstest_raw.bin
+    python3 "$SRC/amsdos_wrap.py" /tmp/dnstest_raw.bin "$3/DNSTEST.BIN" 4000
+    rm -f /tmp/dnstest_raw.bin
     ls -l "$3/DNSTEST.BIN"
 }
 
@@ -41,6 +43,11 @@ compile "-DAMSDOS_USB"  "Albireo/USB"   "$OUT_ALB"
 
 cp DNSTEST.BAS  "$OUT/"
 cp DNSTESTA.BAS "$OUT_ALB/"
+
+echo "Fixing CR+LF line endings in .BAS files..."
+for f in "$OUT/DNSTEST.BAS" "$OUT_ALB/DNSTESTA.BAS"; do
+    perl -pi -e 's/\r?\n/\r\n/' "$f"
+done
 
 echo ""
 echo "ULIfAC:  run DNSTEST.BAS  from $OUT"

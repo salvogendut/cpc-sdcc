@@ -43,7 +43,7 @@ int net_socket_open(void) {
 }
 
 int net_connect(const unsigned char *ip, unsigned int port) {
-    unsigned int timeout;
+    unsigned long timeout;
 
     /* Write destination IP */
     w5100_write_reg(S0_DIPR0,     (unsigned int)ip[0]);
@@ -57,8 +57,8 @@ int net_connect(const unsigned char *ip, unsigned int port) {
     w5100_write_reg(S0_CR, SCMD_CONNECT);
     wait_cmd_done();
 
-    /* Poll for ESTABLISHED with a timeout (~5 seconds at 4 MHz) */
-    timeout = 50000;
+    /* Poll for ESTABLISHED with a timeout (~15 seconds at 4 MHz) */
+    timeout = 300000UL;
     while (timeout--) {
         unsigned char status = w5100_read_reg(S0_SR);
         if (status == SSTAT_ESTABLISHED)
