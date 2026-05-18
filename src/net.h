@@ -9,6 +9,11 @@
 /* Open socket 0 in TCP mode, ready to connect. */
 int net_socket_open(void);
 
+/* Open socket 0 in TCP server listen mode on the given port.
+ * Returns 0 if the socket is now listening, -1 on error.
+ * Poll net_is_connected() to detect an incoming client. */
+int net_listen(unsigned int port);
+
 /* Connect to ip[4] (big-endian) on the given port (host byte order). */
 int net_connect(const unsigned char *ip, unsigned int port);
 

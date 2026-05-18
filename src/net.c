@@ -42,6 +42,19 @@ int net_socket_open(void) {
     return (w5100_read_reg(S0_SR) == SSTAT_INIT) ? 0 : -1;
 }
 
+int net_listen(unsigned int port) {
+    w5100_write_reg(S0_IR, 0xFF);
+    w5100_write_reg(S0_MR, SMODE_TCP);
+    w5100_write_reg(S0_PORT0,     (unsigned char)(port >> 8));
+    w5100_write_reg(S0_PORT0 + 1, (unsigned char)(port & 0xFF));
+    w5100_write_reg(S0_CR, SCMD_OPEN);
+    wait_cmd_done();
+    if (w5100_read_reg(S0_SR) != SSTAT_INIT) return -1;
+    w5100_write_reg(S0_CR, SCMD_LISTEN);
+    wait_cmd_done();
+    return (w5100_read_reg(S0_SR) == SSTAT_LISTEN) ? 0 : -1;
+}
+
 int net_connect(const unsigned char *ip, unsigned int port) {
     unsigned long timeout;
 

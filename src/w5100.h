@@ -38,6 +38,7 @@
 
 /* --- Socket commands ------------------------------------------------------ */
 #define SCMD_OPEN    0x01
+#define SCMD_LISTEN  0x02
 #define SCMD_CONNECT 0x04
 #define SCMD_DISCON  0x08
 #define SCMD_CLOSE   0x10
@@ -47,6 +48,7 @@
 /* --- Socket status -------------------------------------------------------- */
 #define SSTAT_CLOSED      0x00
 #define SSTAT_INIT        0x13
+#define SSTAT_LISTEN      0x14
 #define SSTAT_ESTABLISHED 0x17
 #define SSTAT_CLOSE_WAIT  0x1C
 
