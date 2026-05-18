@@ -2,7 +2,7 @@
 
 C development for the Amstrad CPC using [SDCC](https://sdcc.sourceforge.net/), targeting the Z80.  
 Includes a W5100S Ethernet driver for the [Net4CPC](https://www.cpcwiki.eu/index.php/Net4CPC) hardware,
-with TCP, UDP/DNS support, and an HTTP file downloader (wget).
+with TCP, UDP/DNS support, an HTTP file downloader (wget), and an NTP time client.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ src/
   crt0.s        Startup stub: saves BASIC SP, sets SP=0xBFF0, runs
                 static initialisers (gsinit), calls main(), returns to BASIC
   cpcbios.h     CPC firmware wrappers: cpc_print_char, cpc_print,
-                cpc_cls, cpc_set_mode, cpc_wait_key
+                cpc_cls, cpc_set_mode, cpc_wait_key, cpc_time_ms
   amsdos.h      AMSDOS file output wrappers: cas_out_open/char/close/abandon
   w5100.h       W5100S register map and low-level I/O prototypes
   w5100.c       w5100_read_reg / w5100_write_reg (__naked asm), buffer ops
@@ -31,6 +31,8 @@ examples/
   tcptest/      Opens a TCP connection and performs an HTTP GET
   dnstest/      Resolves a hostname via DNS and prints the IP
   wget/         HTTP file downloader — prompts for URL, saves file to disk
+  ntp/          NTP/SNTP time client — resolves time.cloudflare.com,
+                displays current UTC date and time
 ```
 
 ## Building
@@ -55,6 +57,10 @@ cd examples/dnstest && ./build.sh
 cd examples/wget && ./build.sh
 # bin/WGET.BIN + bin/WGET.BAS
 # bin/albireo/WGET.BIN + bin/albireo/WGETA.BAS
+
+cd examples/ntp && ./build.sh
+# bin/NTP.BIN + bin/NTP.BAS
+# bin/albireo/NTP.BIN + bin/albireo/NTPA.BAS
 
 cd examples/hello && ./build.sh
 # bin/HELLO.BIN + bin/HELLO.BAS
@@ -144,6 +150,7 @@ void cpc_print(const char *s);     /* print null-terminated string */
 void cpc_cls(void);                /* clear text window */
 void cpc_set_mode(char mode);      /* 0=160x200/16col, 1=320x200/4col, 2=640x200/2col */
 char cpc_wait_key(void);           /* KM_WAIT_CHAR — blocks until keypress */
+unsigned int cpc_time_ms(void);    /* 50 Hz frame counter × 20 — elapsed ms, wraps ~65 s */
 ```
 
 ### AMSDOS file output (`src/amsdos.h`)
