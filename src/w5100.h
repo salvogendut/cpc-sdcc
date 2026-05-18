@@ -15,6 +15,8 @@
 #define N_SIPR0  0x000F  /* source IP (4 bytes)                 */
 #define N_RTR0   0x0017  /* ARP retry time (2 bytes)            */
 #define N_RCR    0x0019  /* retry count                         */
+#define N_TMSR   0x001B  /* TX memory size: 00=1KB 01=2KB 10=4KB 11=8KB per socket */
+#define N_RMSR   0x001C  /* RX memory size: same encoding       */
 #define N_DNS0   0x0032  /* DNS IP stored in PPPoE dest field   */
 
 /* --- Socket 0 registers (used for TCP) ----------------------------------- */

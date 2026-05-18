@@ -23,16 +23,29 @@ static void write_bytes(unsigned int reg, const unsigned char *src,
         w5100_write_reg(reg++, (unsigned int)*src++);
 }
 
-#ifdef AMSDOS_USB
+#if defined(AMSDOS_USB)
 
 /*
  * USB/FAT build (Albireo, GoTek with Unidos ROM).
  * CAS IN routines are shifted +3 from standard ROM addresses.
- * net_init_from_file() opens N4C.CFG directly from the drive.
  */
 #define CAS_IN_OPEN   0xBC77
 #define CAS_IN_CLOSE  0xBC7A
 #define CAS_IN_DIRECT 0xBC83
+
+#elif defined(AMSDOS_STD)
+
+/*
+ * Standard AMSDOS build with direct file reading.
+ * CAS IN routines at the canonical ROM addresses.
+ */
+#define CAS_IN_OPEN   0xBC74
+#define CAS_IN_CLOSE  0xBC77
+#define CAS_IN_DIRECT 0xBC80
+
+#endif
+
+#if defined(AMSDOS_USB) || defined(AMSDOS_STD)
 
 static const char cfg_filename[] = "N4C.CFG";
 
@@ -143,7 +156,7 @@ process:
     return net_init(&cfg);
 }
 
-#else  /* !AMSDOS_USB — ULIfAC / real floppy */
+#else  /* !AMSDOS_USB && !AMSDOS_STD — ULIfAC / real floppy, POKE mode */
 
 /*
  * Standard AMSDOS build.
@@ -174,7 +187,7 @@ int net_init_from_file(void) {
     return net_init(&cfg) ? -2 : 0;
 }
 
-#endif /* AMSDOS_USB */
+#endif /* AMSDOS_USB || AMSDOS_STD */
 
 int net_init(const net_config_t *cfg) {
     if (!chip_present())
@@ -190,6 +203,10 @@ int net_init(const net_config_t *cfg) {
     write_bytes(N_SUBR0, cfg->netmask, 4);
     write_bytes(N_SIPR0, cfg->ip,      4);
     write_bytes(N_DNS0,  cfg->dns,     4);
+
+    /* Explicitly allocate 2 KB per socket on all four sockets */
+    w5100_write_reg(N_TMSR, 0x55);
+    w5100_write_reg(N_RMSR, 0x55);
 
     return 0;
 }
