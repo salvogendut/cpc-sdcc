@@ -3,6 +3,8 @@
 #include "../../src/dns.h"
 #include "../../src/net.h"
 #include "../../src/w5100.h"
+#include "screen.h"
+#include "ansi.h"
 
 /*
  * Parameters written by TELNET.BAS before CALL &4000.
@@ -122,8 +124,9 @@ void main(void) {
         goto done;
     }
     cpc_print(" OK\r\n");
-    cpc_print("Press ESC to disconnect.\r\n");
-    cpc_print("---\r\n");
+
+    /* Switch to Mode 2 (80×25) for full ANSI terminal display */
+    screen_init();
 
     iac_state = S_NORMAL;
     iac_cmd   = 0;
@@ -142,8 +145,8 @@ void main(void) {
                 case S_NORMAL:
                     if (c == T_IAC) {
                         iac_state = S_IAC;
-                    } else if (c >= 0x20 || c == '\r' || c == '\n' || c == '\t') {
-                        cpc_print_char(c);
+                    } else {
+                        screen_write(c);
                     }
                     break;
 
@@ -193,7 +196,10 @@ void main(void) {
     }
 
     net_close();
-    cpc_print("\r\n---\r\nDisconnected.\r\n");
+    {
+        const char *msg = "\r\n---\r\nDisconnected.\r\n";
+        while (*msg) screen_write((unsigned char)*msg++);
+    }
 
 done:
     cpc_print("Press any key.\r\n");
