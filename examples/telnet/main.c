@@ -82,6 +82,7 @@ void main(void) {
     unsigned char server_ip[4];
     unsigned int  port;
     unsigned char iac_state, iac_cmd;
+    unsigned char local_echo;
     unsigned int  received;
     int rc, key;
 
@@ -134,8 +135,9 @@ void main(void) {
     /* Switch to Mode 2 (80×25) for full ANSI terminal display */
     screen_init();
 
-    iac_state = S_NORMAL;
-    iac_cmd   = 0;
+    iac_state  = S_NORMAL;
+    iac_cmd    = 0;
+    local_echo = 1;
 
     /* Step 4: main telnet loop */
     while (net_is_connected() || net_rx_available()) {
@@ -173,16 +175,16 @@ void main(void) {
                     break;
 
                 case S_CMD:
-                    if (iac_cmd == T_WILL) {
-                        if (c == T_OPT_ECHO || c == T_OPT_SGA)
-                            send_iac(T_DO, c);
-                        else
-                            send_iac(T_DONT, c);
+                    if (iac_cmd == T_WILL && c == T_OPT_ECHO) {
+                        local_echo = 0;
+                        send_iac(T_DO, c);
+                    } else if (iac_cmd == T_WONT && c == T_OPT_ECHO) {
+                        local_echo = 1;
+                        send_iac(T_DONT, c);
+                    } else if (iac_cmd == T_WILL) {
+                        send_iac(T_DONT, c);
                     } else if (iac_cmd == T_DO) {
-                        if (c == T_OPT_SGA)
-                            send_iac(T_WILL, c);
-                        else
-                            send_iac(T_WONT, c);
+                        send_iac(T_WONT, c);
                     }
                     iac_state = S_NORMAL;
                     break;
@@ -205,7 +207,15 @@ void main(void) {
         if (key == 0x1B) break;     /* ESC = disconnect */
         if (key >= 0) {
             unsigned char k = (unsigned char)key;
-            net_send(&k, 1);
+            if (k == 0x0D) {
+                unsigned char crlf[2];
+                crlf[0] = 0x0D; crlf[1] = 0x0A;
+                if (local_echo) { screen_write('\r'); screen_write('\n'); }
+                net_send(crlf, 2);
+            } else {
+                if (local_echo) screen_write(k);
+                net_send(&k, 1);
+            }
         }
     }
 
