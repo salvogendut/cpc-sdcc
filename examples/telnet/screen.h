@@ -16,6 +16,8 @@ unsigned int screen_find_cursor(void);
 unsigned int screen_find_cursor_at(unsigned char col, unsigned char row);
 void screen_set_fg(unsigned char ink);
 void screen_set_bg(unsigned char ink);
+void screen_cursor_draw(void);
+void screen_cursor_erase(void);
 
 /* Called by screen_write; implemented in ansi.c */
 void ansi_feed(unsigned char c);

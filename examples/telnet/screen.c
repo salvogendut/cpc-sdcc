@@ -166,11 +166,10 @@ void screen_cls(void) {
 static void scroll_up(void) {
     unsigned int new_off;
     unsigned char h;
+    scr_hw_roll_up();   /* firmware advances hardware offset by 80 and fills new row */
     new_off = screen_offset + 80;
     h = (unsigned char)(new_off >> 8);
     screen_offset = (new_off & 0x00FF) | ((unsigned int)(h & 7) << 8);
-    scr_set_offset(screen_offset);
-    scr_hw_roll_up();
 }
 
 void screen_set_fg(unsigned char ink) {
@@ -193,6 +192,22 @@ void screen_init(void) {
     screen_set_fg(18);   /* ink 18 = Bright Green */
     screen_set_bg(0);    /* ink 0  = Black */
     scr_set_border(0);   /* border = Black */
+}
+
+/* XOR the bottom scan line of the cursor cell to draw/erase an underline cursor. */
+void screen_cursor_draw(void) {
+    unsigned int addr = screen_find_cursor();
+    unsigned char h;
+    /* Advance to scan line 7 (bottom of cell): add 7*8 = 56 to high byte */
+    h = (unsigned char)(addr >> 8) + 56;
+    addr = (addr & 0x00FF) | ((unsigned int)h << 8);
+    romdis();
+    *((unsigned char *)addr) ^= 0xFF;
+    romen();
+}
+
+void screen_cursor_erase(void) {
+    screen_cursor_draw();   /* XOR is its own inverse */
 }
 
 void screen_write(unsigned char c) {

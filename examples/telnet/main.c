@@ -76,6 +76,21 @@ static void send_iac(unsigned char cmd, unsigned char opt) {
     net_send(resp, 3);
 }
 
+/* Send IAC SB NAWS 0 80 0 25 IAC SE */
+static void send_naws(void) {
+    unsigned char buf[9];
+    buf[0] = T_IAC;
+    buf[1] = T_SB;
+    buf[2] = T_OPT_NAWS;
+    buf[3] = 0;
+    buf[4] = 80;
+    buf[5] = 0;
+    buf[6] = 25;
+    buf[7] = T_IAC;
+    buf[8] = T_SE;
+    net_send(buf, 9);
+}
+
 
 void main(void) {
     unsigned char dns_server[4];
@@ -139,6 +154,11 @@ void main(void) {
     iac_cmd    = 0;
     local_echo = 1;
 
+    /* Advertise NAWS so the server knows our terminal size */
+    send_iac(T_WILL, T_OPT_NAWS);
+
+    screen_cursor_draw();
+
     /* Step 4: main telnet loop */
     while (net_is_connected() || net_rx_available()) {
 
@@ -146,6 +166,7 @@ void main(void) {
         received = net_recv(recv_buf, RECV_BUF_SIZE);
         if (received) {
             unsigned int i;
+            screen_cursor_erase();
             for (i = 0; i < received; i++) {
                 unsigned char c = recv_buf[i];
 
@@ -184,7 +205,12 @@ void main(void) {
                     } else if (iac_cmd == T_WILL) {
                         send_iac(T_DONT, c);
                     } else if (iac_cmd == T_DO) {
-                        send_iac(T_WONT, c);
+                        if (c == T_OPT_NAWS) {
+                            send_iac(T_WILL, c);
+                            send_naws();
+                        } else {
+                            send_iac(T_WONT, c);
+                        }
                     }
                     iac_state = S_NORMAL;
                     break;
@@ -200,6 +226,7 @@ void main(void) {
                     break;
                 }
             }
+            screen_cursor_draw();
         }
 
         /* Send any pending keypress */
@@ -207,6 +234,7 @@ void main(void) {
         if (key == 0x1B) break;     /* ESC = disconnect */
         if (key >= 0) {
             unsigned char k = (unsigned char)key;
+            screen_cursor_erase();
             if (k == 0x0D) {
                 unsigned char crlf[2];
                 crlf[0] = 0x0D; crlf[1] = 0x0A;
@@ -216,9 +244,11 @@ void main(void) {
                 if (local_echo) screen_write(k);
                 net_send(&k, 1);
             }
+            screen_cursor_draw();
         }
     }
 
+    screen_cursor_erase();
     net_close();
     {
         const char *msg = "\r\n---\r\nDisconnected.\r\n";
