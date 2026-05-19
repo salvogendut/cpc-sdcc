@@ -1,7 +1,12 @@
 #include "../../src/cpcbios.h"
 #include "../../src/netinit.h"
 #include "../../src/net.h"
+#ifdef NET_M4
+#include "../../src/dns.h"
+#define M4_TEST_HOST "example.com"
+#else
 #include "../../src/w5100.h"
+#endif
 
 #define SERVER_PORT 80
 
@@ -35,7 +40,7 @@ static void print_ip(const unsigned char *ip) {
 }
 
 void main(void) {
-    unsigned char gw[4];
+    unsigned char server_ip[4];
     unsigned int received, total;
     int rc;
 
@@ -55,10 +60,19 @@ void main(void) {
     }
     cpc_print("OK\r\n");
 
-    gw[0] = w5100_read_reg(N_GAR0);
-    gw[1] = w5100_read_reg(N_GAR0 + 1);
-    gw[2] = w5100_read_reg(N_GAR0 + 2);
-    gw[3] = w5100_read_reg(N_GAR0 + 3);
+#ifdef NET_M4
+    {
+        unsigned char dummy_dns[4] = {0, 0, 0, 0};
+        cpc_print("Resolving " M4_TEST_HOST "...\r\n");
+        rc = dns_resolve(dummy_dns, M4_TEST_HOST, server_ip);
+        if (rc) { cpc_print("DNS FAIL\r\n"); return; }
+        cpc_print("Target: "); print_ip(server_ip); cpc_print("\r\n");
+    }
+#else
+    server_ip[0] = w5100_read_reg(N_GAR0);
+    server_ip[1] = w5100_read_reg(N_GAR0 + 1);
+    server_ip[2] = w5100_read_reg(N_GAR0 + 2);
+    server_ip[3] = w5100_read_reg(N_GAR0 + 3);
 
     {
         const unsigned char *p = (const unsigned char *)0x3F10;
@@ -67,6 +81,7 @@ void main(void) {
         cpc_print("GW:   "); print_ip(p + 8);  cpc_print("\r\n");
         cpc_print("DNS:  "); print_ip(p + 12); cpc_print("\r\n");
     }
+#endif
 
     cpc_print("Open socket... ");
     if (net_socket_open()) {
@@ -76,11 +91,13 @@ void main(void) {
     cpc_print("OK\r\n");
 
     cpc_print("Connecting... ");
-    if (net_connect(gw, SERVER_PORT)) {
-        unsigned char sr = w5100_read_reg(S0_SR);
-        cpc_print("FAIL (SR=0x");
-        print_hex_byte(sr);
-        cpc_print(")\r\n");
+    if (net_connect(server_ip, SERVER_PORT)) {
+#ifndef NET_M4
+        { unsigned char sr = w5100_read_reg(S0_SR);
+          cpc_print("FAIL (SR=0x"); print_hex_byte(sr); cpc_print(")\r\n"); }
+#else
+        cpc_print("FAIL\r\n");
+#endif
         net_close();
         return;
     }

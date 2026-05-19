@@ -2,7 +2,9 @@
 #include "../../src/netinit.h"
 #include "../../src/dns.h"
 #include "../../src/udp.h"
+#ifndef NET_M4
 #include "../../src/w5100.h"
+#endif
 
 #define NTP_PORT     123
 #define NTP_PKT_SIZE 48
@@ -137,10 +139,14 @@ void main(void) {
     cpc_print(ntp_host);
     cpc_print("\r\n");
 
+#ifdef NET_M4
+    dns_server[0] = dns_server[1] = dns_server[2] = dns_server[3] = 0;
+#else
     dns_server[0] = w5100_read_reg(N_DNS0);
     dns_server[1] = w5100_read_reg(N_DNS0 + 1);
     dns_server[2] = w5100_read_reg(N_DNS0 + 2);
     dns_server[3] = w5100_read_reg(N_DNS0 + 3);
+#endif
 
     rc = dns_resolve(dns_server, ntp_host, ntp_ip);
     if (rc != 0) { cpc_print("ERROR: DNS failed\r\n"); goto done; }

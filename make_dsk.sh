@@ -3,6 +3,7 @@ set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$ROOT/bin"
+BIN_M4="$ROOT/bin/m4"
 SRC="$ROOT/src"
 OUT="$ROOT/images"
 
@@ -25,12 +26,15 @@ trap "rm -rf $TMP_DIR" EXIT
 make_disk() {
     local dsk=$1
     local dir=$2
+    local n4ccfg=${3:-yes}   # "yes" = include N4CCFG.BAS (default), "no" = skip
 
     rm -f "$dsk"
     "$IDSK" "$dsk" -n
 
-    echo "  Adding N4CCFG.BAS..."
-    "$IDSK" "$dsk" -i "$TMP_N4CCFG" -t 0 -f
+    if [ "$n4ccfg" = "yes" ]; then
+        echo "  Adding N4CCFG.BAS..."
+        "$IDSK" "$dsk" -i "$TMP_N4CCFG" -t 0 -f
+    fi
 
     # ASCII files from disk dir (BAS, MAN, HTM)
     for f in "$dir"/*.BAS "$dir"/*.MAN "$dir"/*.HTM; do
@@ -50,9 +54,17 @@ make_disk() {
     "$IDSK" "$dsk" -l
 }
 
-echo "Creating disk image..."
+echo "Creating ULIfAC disk image..."
 make_disk "$OUT/n4c_tools.dsk" "$BIN"
 
 echo ""
-echo "Disk image written to $OUT/"
+echo "Creating M4 disk image..."
+if [ -d "$BIN_M4" ] && ls "$BIN_M4"/*.BIN 2>/dev/null | grep -q .; then
+    make_disk "$OUT/m4_tools.dsk" "$BIN_M4" "no"
+else
+    echo "  No M4 binaries in $BIN_M4 — skipping M4 disk"
+fi
+
+echo ""
+echo "Disk images written to $OUT/"
 ls -lh "$OUT"/*.dsk
