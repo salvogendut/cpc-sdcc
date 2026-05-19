@@ -268,7 +268,7 @@ void main(void) {
 
         /* Send any pending keypress */
         key = cpc_read_key();
-        if (key == 0x1B) break;     /* ESC = disconnect */
+        if (key == 0x1D) break;     /* Ctrl+] = disconnect */
         if (key >= 0) {
             unsigned char k = (unsigned char)key;
             screen_cursor_erase();
