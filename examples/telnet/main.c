@@ -76,15 +76,6 @@ static void send_iac(unsigned char cmd, unsigned char opt) {
     net_send(resp, 3);
 }
 
-static void send_naws(void) {
-    static const unsigned char naws[] = {
-        0xFF, 0xFA, 31,   /* IAC SB NAWS */
-        0x00, 80,         /* width  = 80 (big-endian) */
-        0x00, 25,         /* height = 25 (big-endian) */
-        0xFF, 0xF0        /* IAC SE */
-    };
-    net_send(naws, sizeof(naws));
-}
 
 void main(void) {
     unsigned char dns_server[4];
@@ -188,14 +179,10 @@ void main(void) {
                         else
                             send_iac(T_DONT, c);
                     } else if (iac_cmd == T_DO) {
-                        if (c == T_OPT_NAWS) {
+                        if (c == T_OPT_SGA)
                             send_iac(T_WILL, c);
-                            send_naws();
-                        } else if (c == T_OPT_SGA) {
-                            send_iac(T_WILL, c);
-                        } else {
+                        else
                             send_iac(T_WONT, c);
-                        }
                     }
                     iac_state = S_NORMAL;
                     break;

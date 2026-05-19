@@ -63,6 +63,10 @@ static void reset(void) {
     have_digit = 0;
 }
 
+unsigned char ansi_active(void) {
+    return ansi_state != S_IDLE;
+}
+
 /* Return param[idx], default `def` if not present or zero */
 static unsigned char get_p(unsigned char idx, unsigned char def) {
     if (idx >= nparam) return def;

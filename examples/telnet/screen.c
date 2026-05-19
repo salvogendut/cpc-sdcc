@@ -196,7 +196,7 @@ void screen_init(void) {
 }
 
 void screen_write(unsigned char c) {
-    if (c == 27 || c == 0x9B) {
+    if (ansi_active() || c == 27 || c == 0x9B) {
         ansi_feed(c);
         return;
     }
