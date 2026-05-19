@@ -49,11 +49,11 @@ static int cpc_read_key(void) __naked {
     __asm
         call    0xBB09
         jr      c, 00001$
-        ld      hl, #-1
+        ld      de, #-1
         ret
     00001$:
-        ld      l, a
-        ld      h, #0
+        ld      e, a
+        ld      d, #0
         ret
     __endasm;
 }
@@ -78,6 +78,8 @@ static unsigned int cpc_time_ms(void) __naked {
         add     hl, hl
         add     hl, hl
         add     hl, bc
+        ld      d, h
+        ld      e, l
         ret
     __endasm;
 }
