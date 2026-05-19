@@ -41,8 +41,9 @@
 /* Current allocated socket (1-4); 0 = none open */
 static unsigned char m4_socket;
 
-/* Return pointer to socket N's info entry: *(uint16_t*)0xFF06 + N*16 */
+/* Select M4 ROM then return pointer to socket N's info entry. */
 static unsigned char *m4_sock_info(unsigned char sock) {
+    m4_select_rom();
     return (unsigned char *)(*(unsigned int *)0xFF06) + (unsigned int)sock * 16;
 }
 

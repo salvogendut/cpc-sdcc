@@ -43,7 +43,10 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     resp = m4_resp();
     if (resp[3] != 1) return -1;         /* 1 = lookup started; anything else = error */
 
-    /* Socket 0 info starts at the socket table base (no N*16 offset for socket 0) */
+    /* Socket 0 info starts at the socket table base (no N*16 offset for socket 0).
+     * Re-select M4 ROM before reading 0xFF06 — m4_resp() above selected it but
+     * the compiler may have inserted a call between there and here. */
+    m4_select_rom();
     sock0 = (unsigned char *)(*(unsigned int *)0xFF06);
 
     /* Poll until DNS lookup completes (state leaves 5) */

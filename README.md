@@ -38,8 +38,9 @@ src/
 
   M4 WiFi card port (branch m4-port — compile with -DNET_M4):
   m4io.h/c        Low-level M4 I/O: m4_out/m4_strobe/m4_resp/m4_wait
-                  Writes command bytes to port 0xFE00; strobes 0xFC00
-                  Response buffer pointer at 0xFF02; socket table at 0xFF06
+                  m4_rom_init() scans upper ROMs for M4 slot;
+                  m4_select_rom() re-selects it via KL_ROM_SELECT (0xB90F)
+                  before every access to 0xFF02/0xFF06
   net_m4.c        TCP socket API (implements net.h) using M4 commands
   dns_m4.c        DNS via C_NETHOSTIP (implements dns.h); result in socket 0 info
   udp_m4.c        UDP socket API (implements udp.h) — UNVERIFIED on hardware
@@ -98,6 +99,7 @@ cd examples/ntp && ./build.sh
 cd examples/telnet && ./build.sh
 # bin/TELNET.BIN + bin/CHARSET.BIN + bin/TELNET.BAS
 # bin/albireo/TELNET.BIN + bin/albireo/CHARSET.BIN + bin/albireo/TELNETA.BAS
+# bin/m4/TELNET.BIN + bin/m4/CHARSET.BIN + bin/m4/TELNETM4.BAS
 
 cd examples/telnetd && ./build.sh
 # bin/TELNETD.BIN + bin/TELNETD.BAS
@@ -370,7 +372,7 @@ first entry to be processed.
 ## M4 WiFi card port (branch `m4-port`)
 
 The `m4-port` branch adds support for the [M4 Board](https://github.com/M4Duke/)
-WiFi card as a network backend.  Ported so far: `tcptest`, `ntp`.
+WiFi card as a network backend.  Ported so far: `tcptest`, `ntp`, `telnet`.
 
 ### How it works
 
@@ -404,6 +406,20 @@ hostname; `resp[3]` = 1 means lookup started; poll socket 0 state until
 `!= 5`; the resolved IP is then at `socket_0_info[4..7]`, not in the
 response buffer.
 
+### ROM management
+
+The response buffer (`0xFF02`) and socket info table (`0xFF06`) live in the
+M4 ROM's address space (`0xC000–0xFFFF`).  Any CPC firmware call
+(`txt_output`, `km_read_char`, etc.) may change which upper ROM is paged in,
+making those addresses temporarily inaccessible.
+
+`m4_rom_init()` (called once at startup) scans all 128 upper ROM slots for
+the M4 ROM by matching the RSX name string `"M4 BOAR\xC4"` at the slot's
+command table.  After that, `m4_select_rom()` re-selects that slot via
+`KL_ROM_SELECT` (firmware 0xB90F) before every access to `0xFF02` or
+`0xFF06`.  This is required for any app that writes to the screen during
+network I/O (i.e. telnet).
+
 ### No configuration file needed
 
 The M4 card is pre-configured via its own `config.txt` on microSD or the
@@ -421,6 +437,7 @@ transparently in `net_send()`.
 ```bash
 cd examples/tcptest && ./build.sh   # produces bin/m4/TCPTEST.BIN
 cd examples/ntp     && ./build.sh   # produces bin/m4/NTP.BIN
+cd examples/telnet  && ./build.sh   # produces bin/m4/TELNET.BIN + CHARSET.BIN
 ```
 
 The M4 build pass uses `-DNET_M4` and links `m4io.rel`, `net_m4.rel`,

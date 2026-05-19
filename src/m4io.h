@@ -9,14 +9,21 @@
  *   0xFC00  strobe  — strobe after last command byte to signal end of packet
  *
  * Response buffer: 16-bit LE pointer at memory address 0xFF02.
+ * Socket info table: 16-bit LE pointer at memory address 0xFF06.
  *
- * TODO: all response-buffer offsets and socket state encodings need
- *       verification against M4 firmware source or real hardware.
+ * Both addresses are in the M4 ROM's address space (0xC000-0xFFFF).
+ * Call m4_select_rom() before dereferencing either pointer; firmware calls
+ * (txt_output, km_read_char, etc.) may change the active upper ROM.
+ *
+ * Call m4_rom_init() once at program startup before any other m4_ calls.
  */
+
+void m4_rom_init(void);         /* scan upper ROMs, find and store M4 slot */
+void m4_select_rom(void);       /* re-select M4 upper ROM (via KL_ROM_SELECT 0xB90F) */
 
 void m4_out(unsigned int b);
 void m4_strobe(void);
-unsigned char *m4_resp(void);
+unsigned char *m4_resp(void);   /* selects M4 ROM then returns *(uint16_t*)0xFF02 */
 void m4_wait(void);
 
 #endif /* M4IO_H */
