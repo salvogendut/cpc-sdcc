@@ -2,19 +2,25 @@
 #define BANK_H
 
 /*
- * iRAM1024 DK'Tronics-compatible banking driver.
+ * iRAM1024 DK'Tronics/Yarek-extended banking driver.
  *
- * OUT (&7F), value   where value = 0xC0 | (bank<<3) | cfg
- *   bits 7:6 = 11   enable expansion RAM
- *   bits 5:3 = bank  bank number 0-7 (bank 0 = built-in CPC RAM; use 1-7)
- *   bits 2:0 = cfg   0 = map to &4000, 1 = map to &C000
+ * Standard DK'Tronics (banks 1-7, port 0x7F):
+ *   OUT value = 0xC0 | (bank<<3) | cfg
+ *   bits 7:6 = 11  RAM config command
+ *   bits 5:3 = bank (64KB page, 1-7)
+ *   bits 2:0 = cfg  1 = map bank-3 quadrant (last 16KB) to &C000-&FFFF
  *
- * OUT (&7F), 0       disable expansion RAM, &C000 reverts to CPC screen/ROM.
+ * Yarek extended (banks 8-14, port 0x7E = second 512KB block):
+ *   Same data encoding, bank offset = bank - 8 in bits 5:3.
+ *
+ * Each bank_select maps exactly 16KB to &C000-&FFFF (the bank-3 quadrant
+ * of the selected 64KB physical page).  Total accessible: 14 × 16KB = 224KB.
  */
 
-#define BANK_CFG_C000  1u   /* maps 16 KB of selected bank to &C000-&FFFF */
+#define BANK_CFG_C000  1u   /* maps 16KB of selected bank to &C000-&FFFF */
+#define BANK_MAX       14u  /* highest usable bank number (7 block-0 + 7 block-1) */
 
-/* Select expansion RAM: bank (1-7) mapped to the window specified by cfg.
+/* Select expansion RAM: bank (1-BANK_MAX) mapped to &C000.
  * cfg is declared unsigned int so sdcccall(1) passes it in DE (low byte E). */
 void bank_select(unsigned char bank, unsigned int cfg);
 

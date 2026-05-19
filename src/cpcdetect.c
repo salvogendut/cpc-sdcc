@@ -1,4 +1,5 @@
 #include "cpcdetect.h"
+#include "bank.h"
 
 /*
  * CPC model detection by reading known signature bytes in the Lower ROM
@@ -40,9 +41,43 @@ unsigned char cpc_detect_model(void)
 
 unsigned int cpc_detect_ram_kb(void)
 {
-    unsigned char model = cpc_detect_model();
-    if (model == CPC_MODEL_6128 || model == CPC_MODEL_6128PLUS) {
+    volatile unsigned char *test_addr = (volatile unsigned char *)0xC100;
+    unsigned char model;
+    unsigned int total_kb;
+    unsigned char bank;
+    unsigned char saved;
+
+    model = cpc_detect_model();
+
+    /* 6128 has 128 KB built-in; banks 1-7 of the gate array address its own
+     * extra pages, not DK'Tronics expansion — skip the expansion probe. */
+    if (model == CPC_MODEL_6128 || model == CPC_MODEL_6128PLUS)
         return 128;
+
+    total_kb = 64;
+
+    for (bank = 1; bank <= BANK_MAX; bank++) {
+        saved = *test_addr;
+
+        /* Write sentinel to screen RAM, then swap in expansion bank at &C000.
+         * If the bank exists the subsequent write goes there; screen RAM keeps
+         * 0xAA.  DI prevents firmware ISR touching &C000 during the window. */
+        *test_addr = 0xAA;
+        __asm
+            di
+        __endasm;
+        bank_select(bank, BANK_CFG_C000);
+        *test_addr = 0x55;
+        bank_restore();
+        __asm
+            ei
+        __endasm;
+
+        if (*test_addr == 0xAA)
+            total_kb += 16;
+
+        *test_addr = saved;
     }
-    return 64;
+
+    return total_kb;
 }

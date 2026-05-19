@@ -58,6 +58,20 @@ static int cpc_read_key(void) __naked {
     __endasm;
 }
 
+/* Physical key state check (KM_TEST_KEY).
+ * key_num = key matrix number. Returns 1 if held, 0 if not.
+ * Bypasses translation table — unaffected by KM_SET_TRANSLATE remapping. */
+static unsigned char cpc_test_key(unsigned char key_num) __naked {
+    (void)key_num;
+    __asm
+        call 0xBB39
+        ld   de, #0
+        ret  nc
+        ld   e, #1
+        ret
+    __endasm;
+}
+
 /* Wait for a keypress and return the ASCII code (KM_WAIT_CHAR). */
 static char cpc_wait_key(void) __naked {
     __asm

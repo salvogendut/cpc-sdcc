@@ -12,7 +12,7 @@
  * Startup:
  *   1. Read N4C.CFG and initialise network.
  *   2. Parse HTTPD.MAN (one "<url>=<cpcfile>" entry per line).
- *   3. Load each file from disk into iRAM1024 expansion banks 1-7.
+ *   3. Load each file from disk into iRAM1024 expansion banks 1-14.
  *   4. Put all 4 TCP sockets into LISTEN on port 80.
  *   5. Poll all sockets in round-robin, serving GET requests.
  *
@@ -56,7 +56,7 @@ static const char * const mime_types[] = {
 
 typedef struct {
     char          url[MAX_URL];   /* request path e.g. "/index.htm\0" */
-    unsigned char start_bank;     /* iRAM bank 1-7 */
+    unsigned char start_bank;     /* iRAM bank 1-14 */
     unsigned int  start_offset;   /* offset within that bank (0-16383) */
     unsigned int  length;         /* byte count */
     unsigned char mime_idx;       /* index into mime_types[] */
@@ -182,7 +182,7 @@ static unsigned char load_file(unsigned char fi, const char *fname, unsigned cha
     files[fi].start_bank   = load_bank;
     files[fi].start_offset = load_offset;
 
-    while (c >= 0 && load_bank <= 7) {
+    while (c >= 0 && load_bank <= BANK_MAX) {
         /* Read up to LOAD_CHUNK bytes into load_buf — no bank selected here */
         n = 0;
         while (n < LOAD_CHUNK && c >= 0) {
@@ -192,7 +192,7 @@ static unsigned char load_file(unsigned char fi, const char *fname, unsigned cha
 
         /* Write load_buf[0..n-1] to banked RAM, advancing bank as needed */
         i = 0;
-        while (i < n && load_bank <= 7) {
+        while (i < n && load_bank <= BANK_MAX) {
             unsigned int space = 0x4000u - load_offset;
             unsigned char write_n = (unsigned char)(n - i);
             unsigned char j;
@@ -248,6 +248,8 @@ static void process_manifest_line(const char *line) {
     fname[flen] = '\0';
 
     files[num_files].mime_idx = get_mime(files[num_files].url);
+    if (files[num_files].mime_idx == MIME_BIN)
+        files[num_files].mime_idx = get_mime(fname);
 
     if (!load_file(num_files, fname, flen)) {
         cpc_print("  SKIP: not found\r\n");
@@ -265,17 +267,12 @@ static void load_manifest(void) {
 
     cpc_print("Loading HTTPD.MAN...\r\n");
 
-    cpc_print("open...");
     if (!cas_in_open(man_name, 9u)) {
-        cpc_print("not found\r\n");
+        cpc_print("  not found\r\n");
         return;
     }
-    cpc_print("ok\r\n");
 
-    /* Skip AMSDOS header byte if present */
-    cpc_print("read...");
     c = cas_in_readbyte();
-    cpc_print("ok\r\n");
     if (c == 0xFF) c = cas_in_readbyte();
 
     pos = 0;
@@ -428,11 +425,9 @@ static void poll_recv(unsigned char s) {
 
         for (i = 0; i < n && c->state == CS_RECV; i++) {
             unsigned char b = rx_tmp[i];
-            /* Detect end of first request line */
-            if (c->req_len > 0 &&
-                (unsigned char)c->req_line[c->req_len - 1] == '\r' &&
-                b == '\n') {
-                c->req_line[c->req_len - 1] = '\0';
+            if (b == '\n') {
+                /* \r is not stored, so \n alone marks end of request line */
+                c->req_line[c->req_len] = '\0';
                 parse_request(s);
                 c->state = CS_SEND_HDR;
             } else if (b != '\r' && c->req_len < MAX_REQ_LINE - 1) {
@@ -462,10 +457,10 @@ static void serve_forever(void) {
             conns[s].state = CS_LISTEN;
     }
 
-    cpc_print("Listening on port 80.\r\nPress ESC to stop.\r\n");
+    cpc_print("Listening on port 80.\r\nPress | to stop.\r\n");
 
     for (;;) {
-        if (cpc_read_key() == 0x1B) break;
+        if (cpc_read_key() == '|') break;
 
         for (s = 0; s < 4; s++) {
             conn_t *c = &conns[s];
