@@ -1,3 +1,4 @@
+![Example Image](n4c-config.png)
 # cpc-sdcc
 
 C development for the Amstrad CPC using [SDCC](https://sdcc.sourceforge.net/), targeting the Z80.  
