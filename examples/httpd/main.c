@@ -36,7 +36,8 @@
 #define MIME_TEXT  2
 #define MIME_GIF   3
 #define MIME_JPEG  4
-#define MIME_BIN   5
+#define MIME_PNG   5
+#define MIME_BIN   6
 
 static const char * const mime_types[] = {
     "text/html",
@@ -44,6 +45,7 @@ static const char * const mime_types[] = {
     "text/plain",
     "image/gif",
     "image/jpeg",
+    "image/png",
     "application/octet-stream"
 };
 
@@ -141,6 +143,7 @@ static unsigned char get_mime(const char *url) {
     if ((dot[0]|32)=='c' && (dot[1]|32)=='s' && (dot[2]|32)=='s') return MIME_CSS;
     if ((dot[0]|32)=='g' && (dot[1]|32)=='i' && (dot[2]|32)=='f') return MIME_GIF;
     if ((dot[0]|32)=='j' && (dot[1]|32)=='p' && (dot[2]|32)=='g') return MIME_JPEG;
+    if ((dot[0]|32)=='p' && (dot[1]|32)=='n' && (dot[2]|32)=='g') return MIME_PNG;
     if ((dot[0]|32)=='t' && (dot[1]|32)=='x' && (dot[2]|32)=='t') return MIME_TEXT;
     return MIME_BIN;
 }
