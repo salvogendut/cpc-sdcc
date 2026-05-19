@@ -356,3 +356,7 @@ asm.  Use the register the calling convention already places the argument in.
 | 0x7000–0xBFEF   | Static data and BSS (`--data-loc 0x7000`)                  |
 | 0xBFF0–0xBFFF   | Stack (grows down from 0xBFF0)                             |
 | 0xC000–0xFFFF   | Screen RAM + upper ROM                                     |
+
+## Acknowledgements
+
+- **[llopis/amstrad-diagnostics](https://github.com/llopis/amstrad-diagnostics)** — CPC model detection signatures and RAM test patterns used as reference for `src/cpcdetect.c`.
