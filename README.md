@@ -237,11 +237,16 @@ void cas_in_close(void);
 Compile with `-DAMSDOS_USB` for Albireo (CAS IN shifted +3) or without
 for standard AMSDOS / ULIfAC.
 
-**ULIfAC binary file note:** `CAS_IN_DIRECT` (0xBC80 on ULIfAC) returns EOF
-after the first 512-byte FAT sector when reading binary files.  The ULIfAC
-build therefore uses `CAS_IN_CHAR` (0xBC7D) instead, which reads the full
-file without this limit.  On ULIfAC/FAT all files are treated as binary so
-`CAS_IN_CHAR` does not stop at `0x1A`.
+**Binary files on FAT (ULIfAC / USB drives):** `CAS_IN_OPEN` with `A=0xFF`
+(auto-detect) on a file without an AMSDOS header defaults to text mode and
+`CAS_IN_DIRECT` stops at the first `0x1A` byte — a problem for PNG files
+whose magic header contains `0x1A` at byte 6.  The fix is to wrap binary
+files with a real 128-byte AMSDOS type-2 header using `amsdos_wrap.py`
+(use load address `0000` for data files).  `CAS_IN_OPEN` reads the header,
+identifies the file as binary, and `CAS_IN_DIRECT` then delivers all bytes
+without stopping at `0x1A`.  The header is consumed by `CAS_IN_OPEN` and is
+not returned to the caller.  Text files (HTML, manifest) need no wrapping as
+they contain no `0x1A` bytes.
 
 ### Multi-socket TCP (`src/net_multi.h`)
 
