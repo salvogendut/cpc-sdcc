@@ -231,6 +231,7 @@ void screen_write(unsigned char c) {
         return;
     }
     if (c < 0x20) return;
+    if (c >= 0x80) return;   /* discard UTF-8 continuation bytes */
     render_char(c);
     cursor_col++;
     if (cursor_col >= SCREEN_COLS) {

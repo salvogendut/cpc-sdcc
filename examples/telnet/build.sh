@@ -44,9 +44,10 @@ compile() {
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o udp.rel     "$SRC/udp.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o dns.rel     "$SRC/dns.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o net.rel     "$SRC/net.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o screen.rel  screen.c
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o ansi.rel    ansi.c
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o main.rel    main.c
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o screen.rel   screen.c
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o ansi.rel     ansi.c
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o keyboard.rel keyboard.c
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o main.rel     main.c
 
     echo "Linking ($label)..."
     $CC -mz80 --nostdlib --no-std-crt0 \
@@ -54,7 +55,7 @@ compile() {
         --data-loc 0x7000 \
         -o telnet.ihx \
         crt0.rel w5100.rel netinit.rel udp.rel dns.rel net.rel \
-        screen.rel ansi.rel main.rel
+        screen.rel ansi.rel keyboard.rel main.rel
 
     echo "Converting ($label)..."
     $MAKEBIN -p -o 0x4000 telnet.ihx /tmp/telnet_raw.bin

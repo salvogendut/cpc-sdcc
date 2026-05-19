@@ -215,6 +215,16 @@ static void dispatch(unsigned char cmd) {
 void ansi_feed(unsigned char c) {
     unsigned char n;
 
+    /* ESC always cancels any in-progress sequence and starts a new one.
+     * This handles a server-echoed ESC arriving just before a real ANSI
+     * sequence: without this, the echo would leave us in S_ESC and the
+     * real sequence's opening ESC would be consumed by the else-reset path,
+     * causing the '[' to render as a literal character. */
+    if (c == 27 && ansi_state != S_IDLE) {
+        ansi_state = S_ESC;
+        return;
+    }
+
     switch (ansi_state) {
     case S_IDLE:
         if (c == 27) { ansi_state = S_ESC; }
