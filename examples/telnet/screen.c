@@ -66,8 +66,9 @@ static void mc_wait_flyback(void) __naked {
 }
 
 /* SCR_SET_INK: A=pen, B=ink1, C=ink2 (non-flashing: B=C).
- * sdcccall(1): first char → A, second char → E */
-static void scr_set_ink(unsigned char pen, unsigned char ink) __naked {
+ * ink declared unsigned int so sdcccall(1) passes it in DE (E = value).
+ * Declaring it unsigned char would push it on the stack instead. */
+static void scr_set_ink(unsigned char pen, unsigned int ink) __naked {
     (void)pen; (void)ink;
     __asm
         ld b,e

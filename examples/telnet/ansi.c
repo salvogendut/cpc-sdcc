@@ -23,6 +23,7 @@
 #define S_IDLE   0
 #define S_ESC    1  /* received ESC */
 #define S_PARAMS 2  /* received ESC[ or 0x9B, accumulating params */
+#define S_ESC2   3  /* ESC + intermediate byte (0x20-0x2F): skip one final byte */
 
 #define MAX_PARAMS 8
 
@@ -146,7 +147,7 @@ static void do_sgr(void) {     /* select graphic rendition */
     for (i = 0; i < nparam || i == 0; i++) {
         v = (i < nparam) ? params[i] : 0;
         if (v == 0) {
-            screen_set_fg(24);  /* white */
+            screen_set_fg(18);  /* bright green */
             screen_set_bg(0);   /* black */
         } else if (v == 1) {
             /* bold: not implemented visually, keep current color */
@@ -209,9 +210,21 @@ void ansi_feed(unsigned char c) {
             /* RIS: full reset */
             screen_cls();
             reset();
+        } else if (c >= 0x20 && c <= 0x2F) {
+            /* Intermediate byte (e.g. '(' for charset designator, ')' for G1).
+             * One more final byte follows — consume it without printing. */
+            ansi_state = S_ESC2;
         } else {
+            /* Self-contained 2-byte ESC sequence (ESC '=', ESC '>', ESC 'M'…):
+             * the byte is consumed here; nothing more to skip. */
             reset();
         }
+        break;
+
+    case S_ESC2:
+        /* Consume the final byte of an ESC + intermediate sequence (e.g. 'B'
+         * in ESC ( B).  Never reached for printable content. */
+        reset();
         break;
 
     case S_PARAMS:

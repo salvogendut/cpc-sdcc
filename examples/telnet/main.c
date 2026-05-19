@@ -30,6 +30,7 @@
 /* Telnet options */
 #define T_OPT_ECHO  1   /* server echoes our input */
 #define T_OPT_SGA   3   /* suppress go-ahead (character mode) */
+#define T_OPT_NAWS  31  /* negotiate about window size */
 
 /* IAC state machine */
 #define S_NORMAL   0
@@ -73,6 +74,16 @@ static void send_iac(unsigned char cmd, unsigned char opt) {
     resp[1] = cmd;
     resp[2] = opt;
     net_send(resp, 3);
+}
+
+static void send_naws(void) {
+    static const unsigned char naws[] = {
+        0xFF, 0xFA, 31,   /* IAC SB NAWS */
+        0x00, 80,         /* width  = 80 (big-endian) */
+        0x00, 25,         /* height = 25 (big-endian) */
+        0xFF, 0xF0        /* IAC SE */
+    };
+    net_send(naws, sizeof(naws));
 }
 
 void main(void) {
@@ -171,22 +182,17 @@ void main(void) {
                     break;
 
                 case S_CMD:
-                    /* c = option byte.
-                     * WILL ECHO / WILL SGA: accept (DO) — server echoes our
-                     *   input and runs in character mode; without these the
-                     *   server does not echo and typed input is invisible.
-                     * DO SGA: accept (WILL) — we also suppress go-ahead.
-                     * Everything else: refuse. */
                     if (iac_cmd == T_WILL) {
-                        if (c == T_OPT_ECHO || c == T_OPT_SGA)
-                            send_iac(T_DO, c);
-                        else
-                            send_iac(T_DONT, c);
+                        send_iac(T_DO, c);
                     } else if (iac_cmd == T_DO) {
-                        if (c == T_OPT_SGA)
+                        if (c == T_OPT_NAWS) {
                             send_iac(T_WILL, c);
-                        else
+                            send_naws();
+                        } else if (c == T_OPT_SGA) {
+                            send_iac(T_WILL, c);
+                        } else {
                             send_iac(T_WONT, c);
+                        }
                     }
                     iac_state = S_NORMAL;
                     break;
