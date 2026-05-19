@@ -101,6 +101,29 @@ cd examples/hello && ./build.sh
 Copy all files from the relevant output directory to a CPC disk and
 `RUN` the `.BAS` loader.
 
+### Ready-to-use disk image
+
+A prebuilt standard CPC DSK image with all ULIfAC binaries is provided:
+
+```
+images/n4c_tools.dsk
+```
+
+Load it in any CPC emulator (WinAPE, JavaCPC, etc.) or write it to a Gotek
+USB drive.  It contains `N4CCFG.BAS` — run it first to create your `N4C.CFG`:
+
+```
+RUN "N4CCFG.BAS"
+```
+
+It prompts for IP address, subnet mask, gateway, and DNS server, then writes
+`N4C.CFG` with the correct CR+LF line endings.  Rebuild the DSK with:
+
+```bash
+./make_dsk.sh          # requires iDSK from github.com/reidrac/cpc-mastering
+                       # set IDSK=/path/to/idsk if not at ../cpc-mastering/idsk
+```
+
 **telnet** requires three files: `TELNET.BIN`, `CHARSET.BIN`, and `N4C.CFG`.
 The BASIC loader loads `TELNET.BIN` first (its padding zeros 0x6800–0x6FFF),
 then loads `CHARSET.BIN` at `&6800` to restore the Code Page 437 bitmaps.

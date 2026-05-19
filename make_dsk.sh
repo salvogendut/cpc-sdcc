@@ -50,13 +50,9 @@ make_disk() {
     "$IDSK" "$dsk" -l
 }
 
-echo "Creating ULIfAC disk image..."
-make_disk "$OUT/n4c-ulIfac.dsk" "$BIN"
+echo "Creating disk image..."
+make_disk "$OUT/n4c_tools.dsk" "$BIN"
 
 echo ""
-echo "Creating Albireo disk image..."
-make_disk "$OUT/n4c-albireo.dsk" "$BIN/albireo"
-
-echo ""
-echo "Disk images written to $OUT/"
+echo "Disk image written to $OUT/"
 ls -lh "$OUT"/*.dsk
