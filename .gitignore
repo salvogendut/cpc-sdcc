@@ -1,5 +1,4 @@
-# Build output
-bin/
+# Build output (bin/ is tracked — contains ready-to-use CPC disk images)
 *.rel
 *.ihx
 *.map
