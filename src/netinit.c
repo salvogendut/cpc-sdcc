@@ -153,7 +153,9 @@ process:
     }
 
     cas_close();
-    return net_init(&cfg);
+    /* Map chip-absent (-1 from net_init) to -2 so main() shows the right
+     * error message; -1 is reserved for "N4C.CFG not found". */
+    return (net_init(&cfg) == -1) ? -2 : 0;
 }
 
 #else  /* !AMSDOS_USB && !AMSDOS_STD — ULIfAC / real floppy, POKE mode */

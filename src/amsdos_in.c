@@ -22,11 +22,10 @@ unsigned char cas_in_open(const char *fname, unsigned int flen) __naked {
         ld   b, e
         ld   a, #0xFF
         call CAS_IN_OPEN_ADDR
-        ld   l, #0
+        ld   a, #0          ; A = return value (unsigned char, sdcccall(1))
         jr   nc, 00001$
-        ld   l, #1
+        ld   a, #1
     00001$:
-        ld   h, #0
         ret
     __endasm;
 }
@@ -39,11 +38,11 @@ int cas_in_readbyte(void) __naked {
     __asm
         call CAS_IN_DIRECT_ADDR
         jr   c, 00001$
-        ld   hl, #-1
+        ld   de, #-1        ; int return in DE (sdcccall(1))
         ret
     00001$:
-        ld   h, #0
-        ld   l, a
+        ld   e, a
+        ld   d, #0
         ret
     __endasm;
 }
