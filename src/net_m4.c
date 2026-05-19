@@ -2,23 +2,29 @@
 #include "m4io.h"
 
 /*
- * M4 Board TCP driver.
+ * M4 Board TCP driver — verified against m4ewenterm/src/telnetfunc2.s.
  *
  * Packet format:
- *   byte 0:    payload length (number of bytes that follow, NOT counting itself)
+ *   byte 0:    payload length (bytes that follow, NOT counting itself)
  *   bytes 1-2: command word, little-endian
  *   bytes 3+:  parameters
  *
- * Response buffer at address in 0xFF02 (LE pointer):
- *   resp[3]    socket number returned by C_NETSOCKET (0xFF = error)
- *   resp[4:5]  received length LE returned by C_NETRECV
- *   resp[6+]   received data from C_NETRECV
+ * Response buffer: pointer stored at 0xFF02 (16-bit LE).
+ *   resp[3]   = status / socket number (C_NETSOCKET: socket#; others: 0=ok)
+ *   resp[4:5] = received length LE (C_NETRECV only)
+ *   resp[6+]  = received data (C_NETRECV only)
  *
- * Socket state byte at (socket * 16) + 0xFF06:
- *   TODO: verify exact encoding — assumed 0=idle, 1=connecting, 2=active, 3=closed
+ * Socket info table: pointer stored at 0xFF06 (16-bit LE).
+ *   Entry for socket N starts at table_base + N*16.
+ *   entry[0] = state byte
+ *   entry[2] = RX byte count lo
+ *   entry[3] = RX byte count hi
  *
- * Max C_NETSEND payload per call: 250 bytes (pkt[0] <= 255 with 5-byte overhead).
- * Max C_NETRECV response per call: 2048 bytes.
+ * Socket states (confirmed from m4ewenterm source):
+ *   0 = IDLE / OK  (connected; also state after send completes)
+ *   1 = connecting in progress
+ *   2 = send in progress
+ *   3 = remote closed connection
  */
 
 #define C_NETSOCKET  0x4331
@@ -27,15 +33,22 @@
 #define C_NETSEND    0x4334
 #define C_NETRECV    0x4335
 
-#define M4_SOCK_BASE         0xFF06
-#define M4_SOCK_STATE_ACTIVE 2   /* TODO: verify */
-#define M4_SOCK_STATE_CLOSED 3   /* TODO: verify */
+#define M4_SOCK_STATE_IDLE    0   /* connected / OK */
+#define M4_SOCK_STATE_CONN    1   /* connecting */
+#define M4_SOCK_STATE_SEND    2   /* send in progress */
+#define M4_SOCK_STATE_CLOSED  3   /* remote closed */
 
+/* Current allocated socket (1-4); 0 = none open */
 static unsigned char m4_socket;
 
-static unsigned char m4_sock_state(void) {
-    return *((unsigned char *)(M4_SOCK_BASE + (unsigned int)m4_socket * 16));
+/* Return pointer to socket N's info entry: *(uint16_t*)0xFF06 + N*16 */
+static unsigned char *m4_sock_info(unsigned char sock) {
+    return (unsigned char *)(*(unsigned int *)0xFF06) + (unsigned int)sock * 16;
 }
+
+/* -------------------------------------------------------------------------
+ * net.h API
+ * -------------------------------------------------------------------------*/
 
 int net_socket_open(void) {
     unsigned char *resp;
@@ -57,9 +70,10 @@ int net_listen(unsigned int port) {
 
 int net_connect(const unsigned char *ip, unsigned int port) {
     unsigned long timeout;
-    /* C_NETCONNECT: socket, 4×IP, 2×port (LE) */
+    unsigned char *sock;
+    /* C_NETCONNECT: socket, 4×IP, 2×port LE */
     m4_out(9);
-    m4_out(0x32); m4_out(0x43);                /* C_NETCONNECT LE */
+    m4_out(0x32); m4_out(0x43);
     m4_out((unsigned int)m4_socket);
     m4_out((unsigned int)ip[0]);
     m4_out((unsigned int)ip[1]);
@@ -68,32 +82,37 @@ int net_connect(const unsigned char *ip, unsigned int port) {
     m4_out((unsigned int)(port & 0xFF));
     m4_out((unsigned int)(port >> 8));
     m4_strobe();
-    /* Poll socket state until connected or closed.
-     * TODO: calibrate count — 3000000 aims for ~10–15 s at 4 MHz. */
+    m4_wait();
+    if (m4_resp()[3] == 0xFF) return -1;   /* command-level error */
+
+    /* Poll socket state: 0=connected, 1=connecting, 3=closed/error */
+    sock = m4_sock_info(m4_socket);
     timeout = 3000000UL;
     while (timeout--) {
-        unsigned char state = m4_sock_state();
-        if (state == M4_SOCK_STATE_ACTIVE) return 0;
+        unsigned char state = sock[0];
+        if (state == M4_SOCK_STATE_IDLE)   return 0;
         if (state == M4_SOCK_STATE_CLOSED) return -1;
     }
     return -1;
 }
 
 int net_send(const unsigned char *buf, unsigned int len) {
+    unsigned char *sock;
+    sock = m4_sock_info(m4_socket);
     while (len) {
-        /* Max 250 data bytes per call so pkt[0] stays <= 255. */
         unsigned char chunk = (len > 250) ? 250 : (unsigned char)len;
         unsigned char i;
-        /* C_NETSEND: socket, size-lo, size-hi, data */
+        /* C_NETSEND: socket, size-lo, size-hi, data (max 250 bytes/call) */
         m4_out((unsigned int)(5 + chunk));
-        m4_out(0x34); m4_out(0x43);            /* C_NETSEND LE */
+        m4_out(0x34); m4_out(0x43);
         m4_out((unsigned int)m4_socket);
-        m4_out((unsigned int)chunk);           /* size lo */
-        m4_out(0);                             /* size hi */
+        m4_out((unsigned int)chunk);
+        m4_out(0);
         for (i = 0; i < chunk; i++)
             m4_out((unsigned int)buf[i]);
         m4_strobe();
-        m4_wait();
+        /* Wait for send to complete: poll state until != 2 (send in progress) */
+        { unsigned int w = 60000U; while (sock[0] == M4_SOCK_STATE_SEND && w--) ; }
         buf += chunk;
         len -= chunk;
     }
@@ -101,18 +120,22 @@ int net_send(const unsigned char *buf, unsigned int len) {
 }
 
 unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
-    unsigned char *resp;
+    unsigned char *sock, *resp;
     unsigned int recv_len, i;
+    sock = m4_sock_info(m4_socket);
+    /* Fast check: is there data in the RX buffer? */
+    if (!sock[2] && !sock[3]) return 0;
     if (maxlen > 2048) maxlen = 2048;
     /* C_NETRECV: socket, requested-size LE */
     m4_out(5);
-    m4_out(0x35); m4_out(0x43);                /* C_NETRECV LE */
+    m4_out(0x35); m4_out(0x43);
     m4_out((unsigned int)m4_socket);
     m4_out((unsigned int)(maxlen & 0xFF));
     m4_out((unsigned int)(maxlen >> 8));
     m4_strobe();
     m4_wait();
     resp = m4_resp();
+    if (resp[3] != 0) return 0;    /* error status */
     recv_len = (unsigned int)resp[4] | ((unsigned int)resp[5] << 8);
     if (!recv_len) return 0;
     if (recv_len > maxlen) recv_len = maxlen;
@@ -122,9 +145,8 @@ unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
 }
 
 void net_close(void) {
-    /* C_NETCLOSE: socket */
     m4_out(3);
-    m4_out(0x33); m4_out(0x43);                /* C_NETCLOSE LE */
+    m4_out(0x33); m4_out(0x43);
     m4_out((unsigned int)m4_socket);
     m4_strobe();
     m4_wait();
@@ -133,9 +155,13 @@ void net_close(void) {
 
 unsigned char net_is_connected(void) {
     if (!m4_socket) return 0;
-    return (m4_sock_state() != M4_SOCK_STATE_CLOSED) ? 1 : 0;
+    return (m4_sock_info(m4_socket)[0] != M4_SOCK_STATE_CLOSED) ? 1 : 0;
 }
 
 unsigned int net_rx_available(void) {
-    return net_is_connected() ? 1 : 0;
+    unsigned char *sock;
+    if (!m4_socket) return 0;
+    sock = m4_sock_info(m4_socket);
+    if (sock[0] == M4_SOCK_STATE_CLOSED) return 0;
+    return (unsigned int)sock[2] | ((unsigned int)sock[3] << 8);
 }
