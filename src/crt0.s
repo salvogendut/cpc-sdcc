@@ -8,6 +8,8 @@
 ;--------------------------------------------------------------------------
         .module crt0
         .globl  _main
+        .globl  s__DATA
+        .globl  l__DATA
 
         .area   _CODE
 
@@ -19,6 +21,21 @@
         ld      (#_bas_sp), hl      ; stash BASIC's stack pointer
 
         ld      sp, #0xBFF0         ; top of free RAM, below screen at 0xC000
+
+        ; Zero the entire DATA section.  makebin -p pads gaps in the ihex
+        ; with 0xFF, so uninitialised (.ds) variables start as 0xFF instead
+        ; of 0x00.  Clearing first, then running gsinit, gives the standard
+        ; C guarantee: static variables without an explicit initialiser are 0.
+        ld      hl, #s__DATA
+        ld      bc, #l__DATA
+        xor     a
+00001$:
+        ld      (hl), a
+        inc     hl
+        dec     bc
+        ld      a, b
+        or      c
+        jr      nz, 00001$
 
         ; Run SDCC static-variable initialisers (_GSINIT → _GSFINAL).
         ; Without this, `static` variables with non-zero initialisers
