@@ -46,6 +46,33 @@
 
 static unsigned char recv_buf[RECV_BUF_SIZE];
 
+/*
+ * ESC key detection via the CPC Break event.
+ *
+ * On this CPC the ESC key returns '|' (0x7C) via KM_READ_CHAR AND fires the
+ * firmware Break event.  The real '|' key also returns 0x7C but does NOT fire
+ * Break.  We install a Break handler that sets esc_flag; in the main loop we
+ * check the flag to distinguish the two keys, preserving '|' for shell use.
+ */
+unsigned char esc_flag;
+
+static void esc_break_handler(void) __naked {
+    __asm
+        ld  a, #1
+        ld  (_esc_flag), a
+        ret
+    __endasm;
+}
+
+static void cpc_init_esc_break(void) __naked {
+    __asm
+        ld  hl, #_esc_break_handler
+        xor a               ; A=0: handler is in RAM, no ROM switch needed
+        call 0xBB33         ; KM_SET_BREAK
+        ret
+    __endasm;
+}
+
 static void print_uint(unsigned int n) {
     static const unsigned int powers[5] = { 10000, 1000, 100, 10, 1 };
     unsigned char i, d, leading = 1;
@@ -176,6 +203,10 @@ void main(void) {
     sb_pos     = 0;
     local_echo = 1;
 
+    /* Register Break handler so ESC key sends ESC, not '|' */
+    esc_flag = 0;
+    cpc_init_esc_break();
+
     /* Advertise our capabilities up front */
     send_iac(T_WILL, T_OPT_TTYPE);
     send_iac(T_WILL, T_OPT_NAWS);
@@ -269,12 +300,22 @@ void main(void) {
         /* Send any pending keypress */
         key = cpc_read_key();
         if (key == 0x1D) break;     /* Ctrl+] = disconnect */
+
+        /* ESC key fires the Break event AND queues '|' (0x7C).
+         * The real '|' key queues 0x7C without firing Break.
+         * Handle ESC here; fall through for all other keys. */
+        if (esc_flag) {
+            unsigned char esc_byte = 0x1B;
+            esc_flag = 0;
+            if (key >= 0 && (unsigned char)key == 0x7C)
+                key = -1;   /* discard the buffered '|' that was ESC */
+            screen_cursor_erase();
+            net_send(&esc_byte, 1);
+            screen_cursor_draw();
+        }
+
         if (key >= 0) {
             unsigned char k = (unsigned char)key;
-            /* CPC firmware maps the physical ESC key to 0x7C ('|') on this
-             * keyboard variant.  Remap it to ESC (0x1B) so vim/nano work.
-             * To type a literal pipe, use the shell: printf '|' or $'\x7c'. */
-            if (k == 0x7C) k = 0x1B;
             screen_cursor_erase();
             if (k == 0x0D) {
                 unsigned char crlf[2];
