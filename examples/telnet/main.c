@@ -27,6 +27,10 @@
 #define T_SB    0xFA
 #define T_SE    0xF0
 
+/* Telnet options */
+#define T_OPT_ECHO  1   /* server echoes our input */
+#define T_OPT_SGA   3   /* suppress go-ahead (character mode) */
+
 /* IAC state machine */
 #define S_NORMAL   0
 #define S_IAC      1    /* saw 0xFF */
@@ -167,9 +171,23 @@ void main(void) {
                     break;
 
                 case S_CMD:
-                    /* c = option byte. Refuse all WILL/DO; ignore WONT/DONT. */
-                    if (iac_cmd == T_WILL) send_iac(T_DONT, c);
-                    else if (iac_cmd == T_DO)   send_iac(T_WONT, c);
+                    /* c = option byte.
+                     * WILL ECHO / WILL SGA: accept (DO) — server echoes our
+                     *   input and runs in character mode; without these the
+                     *   server does not echo and typed input is invisible.
+                     * DO SGA: accept (WILL) — we also suppress go-ahead.
+                     * Everything else: refuse. */
+                    if (iac_cmd == T_WILL) {
+                        if (c == T_OPT_ECHO || c == T_OPT_SGA)
+                            send_iac(T_DO, c);
+                        else
+                            send_iac(T_DONT, c);
+                    } else if (iac_cmd == T_DO) {
+                        if (c == T_OPT_SGA)
+                            send_iac(T_WILL, c);
+                        else
+                            send_iac(T_WONT, c);
+                    }
                     iac_state = S_NORMAL;
                     break;
 

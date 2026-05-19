@@ -77,6 +77,18 @@ static void scr_set_ink(unsigned char pen, unsigned char ink) __naked {
     __endasm;
 }
 
+/* SCR_SET_BORDER (0xBC38): B=ink1, C=ink2 (non-flashing: B=C).
+ * Single char arg → A; move to B and C before calling firmware. */
+static void scr_set_border(unsigned char ink) __naked {
+    (void)ink;
+    __asm
+        ld b,a
+        ld c,a
+        call #0xBC38
+        ret
+    __endasm;
+}
+
 /* LDIR to zero 0xC000–0xFFFF (16 KB, 16384 bytes = 1 + 16383 via LDIR) */
 static void fill_screen_zero(void) __naked {
     __asm
@@ -177,8 +189,9 @@ void screen_init(void) {
     cursor_row = 0;
     screen_offset = 0;
     screen_cls();
-    screen_set_fg(24);
-    screen_set_bg(0);
+    screen_set_fg(18);   /* ink 18 = Bright Green */
+    screen_set_bg(0);    /* ink 0  = Black */
+    scr_set_border(0);   /* border = Black */
 }
 
 void screen_write(unsigned char c) {
