@@ -20,10 +20,12 @@
  */
 
 /* State machine */
-#define S_IDLE   0
-#define S_ESC    1  /* received ESC */
-#define S_PARAMS 2  /* received ESC[ or 0x9B, accumulating params */
-#define S_ESC2   3  /* ESC + intermediate byte (0x20-0x2F): skip one final byte */
+#define S_IDLE    0
+#define S_ESC     1  /* received ESC */
+#define S_PARAMS  2  /* received ESC[ or 0x9B, accumulating params */
+#define S_ESC2    3  /* ESC + intermediate byte (0x20-0x2F): skip one final byte */
+#define S_OSC     4  /* ESC ]: skip OSC payload until BEL or ESC */
+#define S_OSC_ESC 5  /* saw ESC inside OSC: next char decides end vs continue */
 
 #define MAX_PARAMS 8
 
@@ -210,6 +212,9 @@ void ansi_feed(unsigned char c) {
             /* RIS: full reset */
             screen_cls();
             reset();
+        } else if (c == ']') {
+            /* OSC: skip until BEL or ESC \ */
+            ansi_state = S_OSC;
         } else if (c >= 0x20 && c <= 0x2F) {
             /* Intermediate byte (e.g. '(' for charset designator, ')' for G1).
              * One more final byte follows — consume it without printing. */
@@ -227,6 +232,17 @@ void ansi_feed(unsigned char c) {
         reset();
         break;
 
+    case S_OSC:
+        if (c == 7) { reset(); }           /* BEL terminates OSC */
+        else if (c == 27) { ansi_state = S_OSC_ESC; }
+        break;
+
+    case S_OSC_ESC:
+        /* ESC \ (ST) terminates OSC; anything else — back to skipping */
+        if (c == '\\') reset();
+        else ansi_state = S_OSC;
+        break;
+
     case S_PARAMS:
         if (c >= '0' && c <= '9') {
             n = c - '0';
@@ -242,7 +258,7 @@ void ansi_feed(unsigned char c) {
             if (nparam < MAX_PARAMS - 1) nparam++;
             have_digit = 0;
             params[nparam] = 0;
-        } else if (c == '?') {
+        } else if (c == '?' || c == '>' || c == '<') {
             /* private parameter prefix, ignore */
         } else if (c >= '@' && c <= '~') {
             /* final byte: this is the command */

@@ -183,7 +183,10 @@ void main(void) {
 
                 case S_CMD:
                     if (iac_cmd == T_WILL) {
-                        send_iac(T_DO, c);
+                        if (c == T_OPT_ECHO || c == T_OPT_SGA)
+                            send_iac(T_DO, c);
+                        else
+                            send_iac(T_DONT, c);
                     } else if (iac_cmd == T_DO) {
                         if (c == T_OPT_NAWS) {
                             send_iac(T_WILL, c);
