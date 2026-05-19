@@ -31,7 +31,8 @@ src/
                 parameterised by socket number; uses SREG/STX_BASE/SRX_BASE macros
   udp.h/c       UDP socket API (socket 1): open/sendto/recv/close
   dns.h/c       DNS A-record resolver: dns_resolve()
-  bank.h/c      iRAM1024 DK'Tronics banking driver: bank_select/bank_restore
+  cpcdetect.h/c CPC model detection (ROM signatures) and expansion RAM probe
+  bank.h/c      iRAM1024 DK'Tronics/Yarek banking driver: bank_select/bank_restore
   amsdos_wrap.py  Adds 128-byte AMSDOS type-2 binary header to a raw binary
 
 examples/
@@ -48,9 +49,10 @@ examples/
                 CPC firmware jump table to mirror BASIC's I/O over TCP;
                 returns to BASIC which then drives the remote session
   httpd/        Static HTTP server — reads HTTPD.MAN manifest at startup,
-                loads web files into iRAM1024 expansion RAM (banks 1-7,
-                up to 112 KB), then serves HTTP/1.0 GET requests on port 80
-                over all four W5100S sockets concurrently (round-robin poll)
+                loads web files into iRAM1024 expansion RAM (banks 1-14,
+                up to 224 KB / 288 KB total), then serves HTTP/1.0 GET
+                requests on port 80 over all four W5100S sockets concurrently
+                (round-robin poll)
 ```
 
 ## Building
@@ -89,8 +91,8 @@ cd examples/telnetd && ./build.sh
 # bin/albireo/TELNETD.BIN + bin/albireo/TELNETDA.BAS
 
 cd examples/httpd && ./build.sh
-# bin/HTTPD.BIN + bin/HTTPD.BAS
-# bin/albireo/HTTPD.BIN + bin/albireo/HTTDPA.BAS
+# bin/HTTPD.BIN + bin/HTTPD.BAS + bin/INDEX.HTM + bin/LOGO.PNG + bin/HTTPD.MAN
+# bin/albireo/HTTPD.BIN + bin/albireo/HTTDPA.BAS + (same web files)
 
 cd examples/hello && ./build.sh
 # bin/HELLO.BIN + bin/HELLO.BAS
@@ -192,7 +194,9 @@ void cpc_print_char(char c);       /* TXT_OUTPUT */
 void cpc_print(const char *s);     /* print null-terminated string */
 void cpc_cls(void);                /* clear text window */
 void cpc_set_mode(char mode);      /* 0=160x200/16col, 1=320x200/4col, 2=640x200/2col */
+int  cpc_read_key(void);           /* KM_READ_CHAR — non-blocking; returns char or -1 */
 char cpc_wait_key(void);           /* KM_WAIT_CHAR — blocks until keypress */
+unsigned char cpc_test_key(unsigned char key_num); /* KM_TEST_KEY — raw matrix state */
 unsigned int cpc_time_ms(void);    /* 50 Hz frame counter × 20 — elapsed ms, wraps ~65 s */
 ```
 
@@ -233,6 +237,12 @@ void cas_in_close(void);
 Compile with `-DAMSDOS_USB` for Albireo (CAS IN shifted +3) or without
 for standard AMSDOS / ULIfAC.
 
+**ULIfAC binary file note:** `CAS_IN_DIRECT` (0xBC80 on ULIfAC) returns EOF
+after the first 512-byte FAT sector when reading binary files.  The ULIfAC
+build therefore uses `CAS_IN_CHAR` (0xBC7D) instead, which reads the full
+file without this limit.  On ULIfAC/FAT all files are treated as binary so
+`CAS_IN_CHAR` does not stop at `0x1A`.
+
 ### Multi-socket TCP (`src/net_multi.h`)
 
 For use when all four W5100S sockets are needed (e.g. the httpd).
@@ -256,20 +266,34 @@ void         tcp_close_sock(unsigned char s);
 
 ### iRAM1024 banking (`src/bank.h`)
 
-For the [iRAM1024](https://github.com/etomuc/CPC464-iRAM1024) DK'Tronics
-compatible 1 MB expansion RAM.  Banks 1–7 × 16 KB = 112 KB usable storage
-(bank 0 is the built-in CPC RAM).
+For the [iRAM1024](https://github.com/etomuc/CPC464-iRAM1024) DK'Tronics/Yarek
+compatible 1 MB expansion RAM.  Banks 1–14 × 16 KB = 224 KB usable (288 KB
+total with base 64 KB).  Banks 1–7 are the standard DK'Tronics block (port
+0x7F7F); banks 8–14 are the Yarek extended block (port 0x7F7E).
 
 ```c
-#define BANK_CFG_C000  1u   /* map 16 KB of bank to &C000-&FFFF */
+#define BANK_CFG_C000  1u   /* map last 16 KB of bank to &C000-&FFFF */
+#define BANK_MAX      14u   /* highest usable bank (7 block-0 + 7 block-1) */
 
-/* Select bank (1-7) at the given config window.
+/* Select bank (1-BANK_MAX) mapped to &C000.
  * cfg declared unsigned int so sdcccall(1) passes it in DE. */
 void bank_select(unsigned char bank, unsigned int cfg);
 
-/* Restore normal CPC RAM at &C000 (write 0 to port &7F). */
+/* Restore normal CPC RAM at &C000. */
 void bank_restore(void);
 ```
+
+**Port form:** both functions use `OUT (C), A` with B=0x7F (A15=0), not
+`OUT (n), A`.  This is required because the iRAM1024 PAL needs A15=0 to
+respond.  Using `OUT (n), A` with a banking value (0xC0–0xFF) sets A15=1
+and the hardware ignores the command entirely (symptom: 64 KB reported).
+
+**Costdown CPC 464 ASIC:** the ASIC gate array also responds to port 0x7F7F.
+This is harmless as long as `bank_select` and `bank_restore` both use the
+same `OUT (C), A` form — the ASIC always receives the restore command and
+never gets stuck.  Mixing forms (select via `OUT (C), A`, restore via
+`OUT (n), A`) leaves the ASIC with expansion mapped and causes the firmware
+ISR to corrupt `&C000` after EI (symptom: system hang).
 
 When a bank is selected, `&C000–&FFFF` contains expansion RAM.  Code at
 `&4000+` and I/O port accesses (W5100S at `&FD20–&FD23`) are unaffected,
@@ -290,9 +314,16 @@ Plain-text file (CR+LF), one entry per line:
 
 URL path (left of `=`) up to 13 characters; CPC filename (right) up to 12
 characters (8.3 format).  MIME type is inferred from the URL extension
-(`htm`/`html` → `text/html`, `css`, `gif`, `jpg`, `txt`, else octet-stream).
-Up to 24 files.  Files with an AMSDOS binary header (first byte `0xFF`) have
-the full 128-byte header stripped automatically on load.
+(`htm`/`html` → `text/html`, `css`, `gif`, `jpg`, `png`, `txt`, else
+`application/octet-stream`).  Up to 24 files.  Files with an AMSDOS binary
+header (first byte `0xFF`) have the full 128-byte header stripped
+automatically on load.
+
+**Implementation note:** the manifest is read entirely into RAM and the file
+closed before any web file is opened.  This is necessary because AMSDOS only
+supports one CAS input file open at a time — opening a web file while the
+manifest is still open would silently close the manifest, causing only the
+first entry to be processed.
 
 ## W5100S hardware (Net4CPC)
 

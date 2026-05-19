@@ -259,10 +259,22 @@ static void process_manifest_line(const char *line) {
     num_files++;
 }
 
+/*
+ * CAS supports only one input file open at a time.  If we called load_file
+ * (which opens the data file) while the manifest was still open, the first
+ * cas_in_open inside load_file would close the manifest and we would only
+ * ever process the first entry.  Fix: read the whole manifest into a RAM
+ * buffer, close it, then parse and load each entry.
+ */
+#define MANIFEST_BUF 512
+
 static void load_manifest(void) {
     static const char man_name[] = "HTTPD.MAN";
+    static char man_buf[MANIFEST_BUF];
+    unsigned int man_len = 0;
     char line[28];
     unsigned char pos;
+    unsigned int i;
     int c;
 
     cpc_print("Loading HTTPD.MAN...\r\n");
@@ -275,22 +287,26 @@ static void load_manifest(void) {
     c = cas_in_readbyte();
     if (c == 0xFF) c = cas_in_readbyte();
 
+    while (c >= 0 && man_len < MANIFEST_BUF - 1) {
+        man_buf[man_len++] = (char)c;
+        c = cas_in_readbyte();
+    }
+    man_buf[man_len] = '\0';
+    cas_in_close();
+
     pos = 0;
-    for (;;) {
-        if (c < 0) break;
-        if (c == '\r') { c = cas_in_readbyte(); continue; }
-        if (c == '\n' || pos >= 27) {
+    for (i = 0; i <= man_len; i++) {
+        unsigned char b = (i < man_len) ? (unsigned char)man_buf[i] : '\n';
+        if (b == '\r') continue;
+        if (b == '\n' || pos >= 27) {
             line[pos] = '\0';
             pos = 0;
             if (line[0] != '\0') process_manifest_line(line);
-            if (c == '\n') c = cas_in_readbyte();
             continue;
         }
-        line[pos++] = (char)c;
-        c = cas_in_readbyte();
+        line[pos++] = (char)b;
     }
 
-    cas_in_close();
     cpc_print("Files loaded: ");
     print_uint(num_files);
     cpc_print("\r\n");

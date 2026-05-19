@@ -57,8 +57,8 @@ cp HTTPD.BAS  "$OUT/"
 cp HTTDPA.BAS "$OUT_ALB/"
 cp INDEX.HTM  "$OUT/"
 cp INDEX.HTM  "$OUT_ALB/"
-cp "$OUT/logo.png"    "$OUT/LOGO.PNG"
-cp "$OUT/logo.png"    "$OUT_ALB/LOGO.PNG"
+python3 "$SRC/amsdos_wrap.py" "$OUT/logo.png" "$OUT/LOGO.PNG"    0000
+python3 "$SRC/amsdos_wrap.py" "$OUT/logo.png" "$OUT_ALB/LOGO.PNG" 0000
 cp HTTPD.MAN.example "$OUT/HTTPD.MAN"
 cp HTTPD.MAN.example "$OUT_ALB/HTTPD.MAN"
 

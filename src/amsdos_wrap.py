@@ -20,6 +20,9 @@ def make_amsdos_header(basename, data_len, load_addr):
     hdr[27] = (load_addr >> 8) & 0xFF    # entry address high
     hdr[64] = data_len & 0xFF            # file length (RASM AMSDOS convention)
     hdr[65] = (data_len >> 8) & 0xFF
+    checksum = sum(hdr[:67]) & 0xFFFF
+    hdr[67] = checksum & 0xFF
+    hdr[68] = (checksum >> 8) & 0xFF
     return bytes(hdr)
 
 if len(sys.argv) != 4:
