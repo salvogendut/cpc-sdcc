@@ -265,13 +265,17 @@ static void load_manifest(void) {
 
     cpc_print("Loading HTTPD.MAN...\r\n");
 
+    cpc_print("open...");
     if (!cas_in_open(man_name, 9u)) {
-        cpc_print("ERROR: HTTPD.MAN not found\r\n");
+        cpc_print("not found\r\n");
         return;
     }
+    cpc_print("ok\r\n");
 
     /* Skip AMSDOS header byte if present */
+    cpc_print("read...");
     c = cas_in_readbyte();
+    cpc_print("ok\r\n");
     if (c == 0xFF) c = cas_in_readbyte();
 
     pos = 0;
