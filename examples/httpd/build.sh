@@ -15,19 +15,26 @@ mkdir -p "$OUT" "$OUT_ALB"
 echo "Assembling crt0..."
 $AS -o crt0.rel "$SRC/crt0.s"
 
+# $1 = define for netinit  (controls how N4C.CFG is read)
+# $2 = define for amsdos_in (controls CAS addresses for file I/O)
+# ULIfAC: netinit has no define (poke mode — BASIC reads N4C.CFG and POKEs
+#         values to &3F10); amsdos_in uses -DAMSDOS_USB so HTTPD.MAN and web
+#         files are opened at the +3-shifted USB CAS addresses.
+# Albireo: both use -DAMSDOS_USB (C reads N4C.CFG and files directly via CAS).
 compile() {
-    local usb=$1
-    local label=$2
-    local outdir=$3
+    local net_flag=$1
+    local io_flag=$2
+    local label=$3
+    local outdir=$4
 
     echo "Compiling ($label)..."
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o w5100.rel      "$SRC/w5100.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o netinit.rel   "$SRC/netinit.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o net_multi.rel "$SRC/net_multi.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o bank.rel      "$SRC/bank.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o amsdos_in.rel "$SRC/amsdos_in.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o cpcdetect.rel "$SRC/cpcdetect.c"
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o main.rel      main.c
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o w5100.rel      "$SRC/w5100.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o netinit.rel    "$SRC/netinit.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o net_multi.rel  "$SRC/net_multi.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o bank.rel       "$SRC/bank.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $io_flag  -c -o amsdos_in.rel  "$SRC/amsdos_in.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o cpcdetect.rel  "$SRC/cpcdetect.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $net_flag -c -o main.rel       main.c
 
     echo "Linking ($label)..."
     $CC -mz80 --nostdlib --no-std-crt0 \
@@ -43,8 +50,8 @@ compile() {
     ls -l "$outdir/HTTPD.BIN"
 }
 
-compile "-DAMSDOS_STD" "ULIfAC/floppy" "$OUT"
-compile "-DAMSDOS_USB" "Albireo/USB"   "$OUT_ALB"
+compile ""             "-DAMSDOS_USB"  "ULIfAC"  "$OUT"
+compile "-DAMSDOS_USB" "-DAMSDOS_USB"  "Albireo" "$OUT_ALB"
 
 cp HTTPD.BAS  "$OUT/"
 cp HTTDPA.BAS "$OUT_ALB/"
