@@ -26,6 +26,7 @@
 #define S_ESC2    3  /* ESC + intermediate byte (0x20-0x2F): skip one final byte */
 #define S_OSC     4  /* ESC ]: skip OSC payload until BEL or ESC */
 #define S_OSC_ESC 5  /* saw ESC inside OSC: next char decides end vs continue */
+#define S_SS3     6  /* ESC O: application cursor key (DECCKM) */
 
 #define MAX_PARAMS 8
 
@@ -36,6 +37,9 @@ static unsigned char have_digit;  /* nonzero when current param slot has a digit
 
 static unsigned char saved_col;
 static unsigned char saved_row;
+
+static unsigned char cur_fg = 18;  /* current foreground ink (bright green) */
+static unsigned char cur_bg = 0;   /* current background ink (black) */
 
 /* ANSI → CPC hardware ink mapping (0–7 standard, 8–15 bright) */
 static const unsigned char ink_table[16] = {
@@ -149,22 +153,32 @@ static void do_el(void) {      /* erase line */
 }
 
 static void do_sgr(void) {     /* select graphic rendition */
-    unsigned char i, v;
+    unsigned char i, v, tmp;
     for (i = 0; i < nparam || i == 0; i++) {
         v = (i < nparam) ? params[i] : 0;
         if (v == 0) {
+            cur_fg = 18; cur_bg = 0;
             screen_set_fg(18);  /* bright green */
             screen_set_bg(0);   /* black */
         } else if (v == 1) {
-            /* bold: not implemented visually, keep current color */
+            /* bold: not implemented visually */
+        } else if (v == 7) {
+            /* reverse video: swap fg and bg */
+            tmp = cur_fg; cur_fg = cur_bg; cur_bg = tmp;
+            screen_set_fg(cur_fg);
+            screen_set_bg(cur_bg);
         } else if (v >= 30 && v <= 37) {
-            screen_set_fg(ink_table[v - 30]);
+            cur_fg = ink_table[v - 30];
+            screen_set_fg(cur_fg);
         } else if (v >= 40 && v <= 47) {
-            screen_set_bg(ink_table[v - 40]);
+            cur_bg = ink_table[v - 40];
+            screen_set_bg(cur_bg);
         } else if (v >= 90 && v <= 97) {
-            screen_set_fg(ink_table[(v - 90) + 8]);
+            cur_fg = ink_table[(v - 90) + 8];
+            screen_set_fg(cur_fg);
         } else if (v >= 100 && v <= 107) {
-            screen_set_bg(ink_table[(v - 100) + 8]);
+            cur_bg = ink_table[(v - 100) + 8];
+            screen_set_bg(cur_bg);
         }
         if (nparam == 0) break;
     }
@@ -212,6 +226,9 @@ void ansi_feed(unsigned char c) {
             ansi_state = S_PARAMS;
             nparam = 0;
             have_digit = 0;
+        } else if (c == 'O') {
+            /* SS3: application cursor key prefix (sent when DECCKM is active) */
+            ansi_state = S_SS3;
         } else if (c == 'c') {
             /* RIS: full reset */
             screen_cls();
@@ -228,6 +245,17 @@ void ansi_feed(unsigned char c) {
              * the byte is consumed here; nothing more to skip. */
             reset();
         }
+        break;
+
+    case S_SS3:
+        /* Application cursor keys: ESC O A/B/C/D = up/down/right/left */
+        switch (c) {
+        case 'A': do_cuu(); break;
+        case 'B': do_cud(); break;
+        case 'C': do_cuf(); break;
+        case 'D': do_cub(); break;
+        }
+        reset();
         break;
 
     case S_ESC2:
