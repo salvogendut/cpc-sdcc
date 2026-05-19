@@ -30,7 +30,12 @@
 /* Telnet options */
 #define T_OPT_ECHO  1   /* server echoes our input */
 #define T_OPT_SGA   3   /* suppress go-ahead (character mode) */
+#define T_OPT_TTYPE 24  /* terminal type (RFC 1091) */
 #define T_OPT_NAWS  31  /* negotiate about window size */
+
+/* SB sub-commands */
+#define T_SB_IS     0
+#define T_SB_SEND   1
 
 /* IAC state machine */
 #define S_NORMAL   0
@@ -76,6 +81,20 @@ static void send_iac(unsigned char cmd, unsigned char opt) {
     net_send(resp, 3);
 }
 
+/* Send IAC SB TTYPE IS "vt100" IAC SE */
+static void send_ttype(void) {
+    unsigned char buf[11];
+    buf[0]  = T_IAC;
+    buf[1]  = T_SB;
+    buf[2]  = T_OPT_TTYPE;
+    buf[3]  = T_SB_IS;
+    buf[4]  = 'v'; buf[5]  = 't'; buf[6]  = '1';
+    buf[7]  = '0'; buf[8]  = '0';
+    buf[9]  = T_IAC;
+    buf[10] = T_SE;
+    net_send(buf, 11);
+}
+
 /* Send IAC SB NAWS 0 80 0 25 IAC SE */
 static void send_naws(void) {
     unsigned char buf[9];
@@ -97,6 +116,7 @@ void main(void) {
     unsigned char server_ip[4];
     unsigned int  port;
     unsigned char iac_state, iac_cmd;
+    unsigned char sb_opt, sb_pos;
     unsigned char local_echo;
     unsigned int  received;
     int rc, key;
@@ -152,9 +172,12 @@ void main(void) {
 
     iac_state  = S_NORMAL;
     iac_cmd    = 0;
+    sb_opt     = 0;
+    sb_pos     = 0;
     local_echo = 1;
 
-    /* Advertise NAWS so the server knows our terminal size */
+    /* Advertise our capabilities up front */
+    send_iac(T_WILL, T_OPT_TTYPE);
     send_iac(T_WILL, T_OPT_NAWS);
 
     screen_cursor_draw();
@@ -184,6 +207,7 @@ void main(void) {
                         iac_cmd   = c;
                         iac_state = S_CMD;
                     } else if (c == T_SB) {
+                        sb_pos = 0;
                         iac_state = S_SB;
                     } else if (c == T_IAC) {
                         /* IAC IAC = literal 0xFF in data stream */
@@ -208,6 +232,8 @@ void main(void) {
                         if (c == T_OPT_NAWS) {
                             send_iac(T_WILL, c);
                             send_naws();
+                        } else if (c == T_OPT_TTYPE) {
+                            /* already sent WILL TTYPE; server now confirms */
                         } else {
                             send_iac(T_WONT, c);
                         }
@@ -216,13 +242,24 @@ void main(void) {
                     break;
 
                 case S_SB:
-                    /* Skip subnegotiation payload */
-                    if (c == T_IAC) iac_state = S_SB_IAC;
+                    if (c == T_IAC) {
+                        iac_state = S_SB_IAC;
+                    } else if (sb_pos == 0) {
+                        sb_opt = c; sb_pos = 1;
+                    } else if (sb_pos == 1) {
+                        /* sub-command byte — store in iac_cmd to reuse a register */
+                        iac_cmd = c; sb_pos = 2;
+                    }
                     break;
 
                 case S_SB_IAC:
-                    if (c == T_SE)  iac_state = S_NORMAL;
-                    else if (c != T_IAC) iac_state = S_SB;
+                    if (c == T_SE) {
+                        if (sb_opt == T_OPT_TTYPE && iac_cmd == T_SB_SEND)
+                            send_ttype();
+                        iac_state = S_NORMAL;
+                    } else if (c != T_IAC) {
+                        iac_state = S_SB;
+                    }
                     break;
                 }
             }
