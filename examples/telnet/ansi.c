@@ -264,6 +264,10 @@ void ansi_feed(unsigned char c) {
             params[nparam] = 0;
         } else if (c == '?' || c == '>' || c == '<') {
             /* private parameter prefix, ignore */
+        } else if (c >= 0x20 && c <= 0x2F) {
+            /* Intermediate byte inside CSI (e.g. SP in "ESC[6 q" cursor-shape).
+             * Consume one more final byte then done. */
+            ansi_state = S_ESC2;
         } else if (c >= '@' && c <= '~') {
             /* final byte: this is the command */
             if (!have_digit) params[nparam] = 0;
