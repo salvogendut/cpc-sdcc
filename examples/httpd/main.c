@@ -1,4 +1,5 @@
 #include "../../src/cpcbios.h"
+#include "../../src/cpcdetect.h"
 #include "../../src/netinit.h"
 #include "../../src/w5100.h"
 #include "../../src/net_multi.h"
@@ -509,13 +510,26 @@ static void serve_forever(void) {
  * Entry point
  * -------------------------------------------------------------------------*/
 
+static const char * const model_names[] = {
+    "Unknown", "CPC 464", "CPC 664", "CPC 6128",
+    "464 Plus", "6128 Plus", "GX4000"
+};
+
 void main(void) {
     int rc;
+    unsigned char model;
 
     cpc_set_mode(1);
     cpc_cls();
     cpc_print("HTTP Server / Net4CPC\r\n");
     cpc_print("======================\r\n");
+
+    model = cpc_detect_model();
+    cpc_print("Machine: ");
+    cpc_print(model_names[model < 7u ? model : 0u]);
+    cpc_print("  RAM: ");
+    print_uint(cpc_detect_ram_kb());
+    cpc_print("KB\r\n");
 
     cpc_print("Network init...");
     rc = net_init_from_file();

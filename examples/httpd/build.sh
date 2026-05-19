@@ -21,11 +21,12 @@ compile() {
     local outdir=$3
 
     echo "Compiling ($label)..."
-    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o w5100.rel     "$SRC/w5100.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o w5100.rel      "$SRC/w5100.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o netinit.rel   "$SRC/netinit.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o net_multi.rel "$SRC/net_multi.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o bank.rel      "$SRC/bank.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o amsdos_in.rel "$SRC/amsdos_in.c"
+    $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o cpcdetect.rel "$SRC/cpcdetect.c"
     $CC -mz80 --nostdlib --no-std-crt0 $usb -c -o main.rel      main.c
 
     echo "Linking ($label)..."
@@ -33,7 +34,7 @@ compile() {
         --code-loc 0x4000 \
         --data-loc 0x7000 \
         -o httpd.ihx \
-        crt0.rel w5100.rel netinit.rel net_multi.rel bank.rel amsdos_in.rel main.rel
+        crt0.rel w5100.rel netinit.rel net_multi.rel bank.rel amsdos_in.rel cpcdetect.rel main.rel
 
     echo "Converting ($label)..."
     $MAKEBIN -p -o 0x4000 httpd.ihx /tmp/httpd_raw.bin
