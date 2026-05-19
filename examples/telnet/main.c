@@ -271,6 +271,10 @@ void main(void) {
         if (key == 0x1D) break;     /* Ctrl+] = disconnect */
         if (key >= 0) {
             unsigned char k = (unsigned char)key;
+            /* CPC firmware maps the physical ESC key to 0x7C ('|') on this
+             * keyboard variant.  Remap it to ESC (0x1B) so vim/nano work.
+             * To type a literal pipe, use the shell: printf '|' or $'\x7c'. */
+            if (k == 0x7C) k = 0x1B;
             screen_cursor_erase();
             if (k == 0x0D) {
                 unsigned char crlf[2];
