@@ -26,12 +26,17 @@
         ; with 0xFF, so uninitialised (.ds) variables start as 0xFF instead
         ; of 0x00.  Clearing first, then running gsinit, gives the standard
         ; C guarantee: static variables without an explicit initialiser are 0.
-        ; LDIR: set first byte to 0, copy each byte to the next — all → 0.
+        ; Note: arithmetic on external symbols (l__DATA - 1) is evaluated at
+        ; assembly time as 0-1=0xFFFF, so do NOT use expressions here.
         ld      hl, #s__DATA
-        ld      de, #s__DATA + 1
-        ld      bc, #l__DATA - 1
+        ld      bc, #l__DATA
+00001$:
         ld      (hl), #0
-        ldir
+        inc     hl
+        dec     bc
+        ld      a, b
+        or      c
+        jr      nz, 00001$
 
         ; Now the DATA section is clear — safe to write _bas_sp.
         ld      hl, (sp_save)
