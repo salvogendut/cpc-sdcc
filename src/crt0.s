@@ -14,11 +14,11 @@
         .area   _CODE
 
         ; BASIC CALL &4000 pushed a 2-byte return address on the Z80 stack.
-        ; Save the current SP (pointing at that return address) so we can
-        ; restore it on exit and keep BASIC's stack balanced.
+        ; Save SP in a local register — we cannot write to _bas_sp yet because
+        ; the DATA section zero loop below will overwrite it.
         ld      hl, #0
-        add     hl, sp              ; HL = SP (Z80 has no LD HL,SP)
-        ld      (#_bas_sp), hl      ; stash BASIC's stack pointer
+        add     hl, sp              ; HL = BASIC's SP
+        ld      (sp_save), hl       ; stash in _CODE (not in _DATA)
 
         ld      sp, #0xBFF0         ; top of free RAM, below screen at 0xC000
 
@@ -26,16 +26,16 @@
         ; with 0xFF, so uninitialised (.ds) variables start as 0xFF instead
         ; of 0x00.  Clearing first, then running gsinit, gives the standard
         ; C guarantee: static variables without an explicit initialiser are 0.
+        ; LDIR: set first byte to 0, copy each byte to the next — all → 0.
         ld      hl, #s__DATA
-        ld      bc, #l__DATA
-        xor     a
-00001$:
-        ld      (hl), a
-        inc     hl
-        dec     bc
-        ld      a, b
-        or      c
-        jr      nz, 00001$
+        ld      de, #s__DATA + 1
+        ld      bc, #l__DATA - 1
+        ld      (hl), #0
+        ldir
+
+        ; Now the DATA section is clear — safe to write _bas_sp.
+        ld      hl, (sp_save)
+        ld      (#_bas_sp), hl
 
         ; Run SDCC static-variable initialisers (_GSINIT → _GSFINAL).
         ; Without this, `static` variables with non-zero initialisers
@@ -47,6 +47,10 @@ _exit::
         ld      hl, (#_bas_sp)      ; restore BASIC's stack pointer
         ld      sp, hl              ; SP now points at the BASIC return address
         ret                         ; pop it → back to BASIC
+
+        ; Scratch word in CODE (survives the DATA zero loop).
+sp_save:
+        .dw     0
 
         .area   _DATA
 _bas_sp:
