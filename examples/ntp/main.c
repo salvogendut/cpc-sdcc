@@ -13,7 +13,7 @@
 /* NTP epoch offset: seconds from 1900-01-01 to 1970-01-01 */
 #define NTP_EPOCH_OFFSET 2208988800UL
 
-static const char ntp_host[] = "time.cloudflare.com";
+static const char ntp_host[] = "pool.ntp.org";  /* 12 chars, fits M4 13-char limit */
 
 static unsigned char ntp_packet[NTP_PKT_SIZE];
 static unsigned char ntp_reply[NTP_PKT_SIZE];
@@ -134,28 +134,32 @@ void main(void) {
     if (rc == -2) { cpc_print("no chip\r\n");        goto done; }
     cpc_print(" OK\r\n");
 
-    /* Step 2: resolve NTP host */
-#ifdef NET_M4
-    /* M4 C_NETHOSTIP is unreliable on some firmware versions — use the local
-     * gateway directly.  Many home routers serve NTP on port 123. */
-    /* time.cloudflare.com = 162.159.200.1 (stable anycast) */
-    ntp_ip[0] = 162; ntp_ip[1] = 159; ntp_ip[2] = 200; ntp_ip[3] = 1;
-    cpc_print("NTP target: "); print_ip(ntp_ip); cpc_print("\r\n");
-    (void)dns_server;
-#else
+    /* Step 2: DNS resolve NTP host */
     cpc_print("Resolving: ");
     cpc_print(ntp_host);
     cpc_print("\r\n");
+
+#ifdef NET_M4
+    dns_server[0] = dns_server[1] = dns_server[2] = dns_server[3] = 0;
+#else
     dns_server[0] = w5100_read_reg(N_DNS0);
     dns_server[1] = w5100_read_reg(N_DNS0 + 1);
     dns_server[2] = w5100_read_reg(N_DNS0 + 2);
     dns_server[3] = w5100_read_reg(N_DNS0 + 3);
+#endif
+
     rc = dns_resolve(dns_server, ntp_host, ntp_ip);
     if (rc != 0) {
-        cpc_print("ERROR: DNS\r\n");
+        cpc_print("ERROR: DNS rc=");
+        print_uint((unsigned int)(rc < 0 ? (unsigned int)(-rc) : (unsigned int)rc));
+#ifdef NET_M4
+        cpc_print(" resp3="); print_uint(dns_diag_resp3);
+        cpc_print(" sock0="); print_uint(dns_diag_sock0);
+        cpc_print(" ip="); print_ip(dns_diag_ip);
+#endif
+        cpc_print("\r\n");
         goto done;
     }
-#endif
 
     cpc_print("NTP server IP: ");
     print_ip(ntp_ip);

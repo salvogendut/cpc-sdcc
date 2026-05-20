@@ -35,13 +35,16 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     p = hostname;
     while (*p++) len++;
 
-    /* C_NETHOSTIP payload: command(2) + hostname(len) + NUL(1) */
-    m4_out((unsigned int)(2 + len + 1));
+    /* C_NETHOSTIP payload is fixed at 16 bytes (matching m4ewenterm cmdlookup).
+     * Layout: 2 bytes command + up to 13 bytes hostname + NUL + zero-padding.
+     * Hostnames longer than 13 characters are not supported. */
+    m4_out(16);
     m4_out(0x36); m4_out(0x43);         /* C_NETHOSTIP LE */
     p = hostname;
-    while (*p)
-        m4_out((unsigned int)(unsigned char)*p++);
-    m4_out(0);                           /* NUL terminator */
+    while (*p && len < 13)
+        { m4_out((unsigned int)(unsigned char)*p++); len++; }
+    /* NUL + zero-pad to fill the 14-byte hostname area */
+    { unsigned char pad; for (pad = len; pad < 14; pad++) m4_out(0); }
     m4_strobe();
     m4_wait();
 
