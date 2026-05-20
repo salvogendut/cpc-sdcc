@@ -138,7 +138,8 @@ void main(void) {
 #ifdef NET_M4
     /* M4 C_NETHOSTIP is unreliable on some firmware versions — use the local
      * gateway directly.  Many home routers serve NTP on port 123. */
-    ntp_ip[0] = 192; ntp_ip[1] = 168; ntp_ip[2] = 68; ntp_ip[3] = 1;
+    /* time.cloudflare.com = 162.159.200.1 (stable anycast) */
+    ntp_ip[0] = 162; ntp_ip[1] = 159; ntp_ip[2] = 200; ntp_ip[3] = 1;
     cpc_print("NTP target: "); print_ip(ntp_ip); cpc_print("\r\n");
     (void)dns_server;
 #else
