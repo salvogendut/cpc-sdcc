@@ -46,7 +46,7 @@ compile_m4() {
     echo "Compiling (M4)..."
     $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o m4io.rel    "$SRC/m4io.c"
     $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o netinit.rel "$SRC/netinit_m4.c"
-    $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o udp.rel     "$SRC/udp_m4.c"
+    $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o net.rel     "$SRC/net_m4.c"
     $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o dns.rel     "$SRC/dns_m4.c"
     $CC -mz80 --nostdlib --no-std-crt0 -DNET_M4 -c -o main.rel    main.c
 
@@ -55,7 +55,7 @@ compile_m4() {
         --code-loc 0x4000 \
         --data-loc 0x7000 \
         -o ntp.ihx \
-        crt0.rel m4io.rel netinit.rel udp.rel dns.rel main.rel
+        crt0.rel m4io.rel netinit.rel net.rel dns.rel main.rel
 
     echo "Converting (M4)..."
     $MAKEBIN -p -o 0x4000 ntp.ihx /tmp/ntp_raw.bin

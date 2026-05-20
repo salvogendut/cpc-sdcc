@@ -49,6 +49,15 @@
 
         call    _main
 _exit::
+        ; Re-select BASIC ROM (slot 0) before returning.
+        ; Any M4 network call leaves slot 7 selected via KL_ROM_SELECT.
+        ; With slot 7 active, BASIC's interpreter code at 0xC000+ is hidden
+        ; behind M4 ROM bytes, so the final RET lands in the wrong code.
+        ; KL_ROM_SELECT is a kernel function (lower ROM) — safe to call
+        ; regardless of which upper ROM is currently selected.
+        ld      c, #0
+        call    0xB90F              ; KL_ROM_SELECT(0) — restore BASIC ROM
+        ei                          ; KL_ROM_SELECT may disable interrupts
         ld      hl, (#_bas_sp)      ; restore BASIC's stack pointer
         ld      sp, hl              ; SP now points at the BASIC return address
         ret                         ; pop it → back to BASIC

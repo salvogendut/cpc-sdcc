@@ -2,7 +2,7 @@
 20 PRINT "TELNET for M4 WiFi"
 30 PRINT "==================="
 40 PRINT
-50 INPUT "Host: ";hst$
+50 INPUT "Host (name or IP): ";hst$
 60 IF hst$="" THEN PRINT "Cancelled.":END
 70 prt=23
 80 PRINT "Port (ENTER for 23): ";

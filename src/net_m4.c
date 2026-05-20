@@ -2,29 +2,23 @@
 #include "m4io.h"
 
 /*
- * M4 Board TCP driver — verified against m4ewenterm/src/telnetfunc2.s.
+ * M4 Board TCP driver.
  *
- * Packet format:
- *   byte 0:    payload length (bytes that follow, NOT counting itself)
- *   bytes 1-2: command word, little-endian
- *   bytes 3+:  parameters
+ * ROM/RAM rule: after a strobe the M4 switches to RAM mode.  Calling
+ * KL_ROM_SELECT (via m4_select_rom / m4_refresh) AFTER a strobe forces the
+ * M4 back to ROM mode, returning stale static bytes instead of live data.
  *
- * Response buffer: pointer stored at 0xFF02 (16-bit LE).
- *   resp[3]   = status / socket number (C_NETSOCKET: socket#; others: 0=ok)
- *   resp[4:5] = received length LE (C_NETRECV only)
- *   resp[6+]  = received data (C_NETRECV only)
+ * Correct sequence for every command:
+ *   1. m4_refresh() — pre-select ROM; cache resp and sock-table pointers.
+ *   2. Send command bytes via m4_out().
+ *   3. m4_strobe() — M4 processes, switches to RAM mode.
+ *   4. m4_wait().
+ *   5. Read resp / sock data using CACHED pointers — NO further m4_refresh().
+ *   6. m4_select_basic() — restore BASIC ROM so BASIC ISRs can access it safely.
  *
- * Socket info table: pointer stored at 0xFF06 (16-bit LE).
- *   Entry for socket N starts at table_base + N*16.
- *   entry[0] = state byte
- *   entry[2] = RX byte count lo
- *   entry[3] = RX byte count hi
- *
- * Socket states (confirmed from m4ewenterm source):
- *   0 = IDLE / OK  (connected; also state after send completes)
- *   1 = connecting in progress
- *   2 = send in progress
- *   3 = remote closed connection
+ * m4_last_sock_state is captured inside net_recv() at step 5 (M4 in RAM mode).
+ * net_is_connected() returns this cached value so callers need not re-enter
+ * M4 ROM mode just to check the connection state.
  */
 
 #define C_NETSOCKET  0x4331
@@ -38,40 +32,51 @@
 #define M4_SOCK_STATE_SEND    2   /* send in progress */
 #define M4_SOCK_STATE_CLOSED  3   /* remote closed */
 
-/* Current allocated socket (1-4); 0 = none open */
-static unsigned char m4_socket;
+static unsigned char  m4_socket;
+static unsigned char *m4_resp_buf;   /* cached *(uint16_t*)0xFF02 */
+static unsigned char *m4_sock_base;  /* cached *(uint16_t*)0xFF06 */
 
-/* Select M4 ROM then return pointer to socket N's info entry. */
-static unsigned char *m4_sock_info(unsigned char sock) {
+/* Socket state captured by net_recv() while M4 is in RAM mode.
+ * Used by net_is_connected() so it never has to re-enter M4 ROM mode. */
+static unsigned char m4_last_sock_state;
+
+static void m4_refresh(void) {
     m4_select_rom();
-    return (unsigned char *)(*(unsigned int *)0xFF06) + (unsigned int)sock * 16;
+    m4_resp_buf  = (unsigned char *)(*(unsigned int *)0xFF02);
+    m4_sock_base = (unsigned char *)(*(unsigned int *)0xFF06);
 }
 
-/* -------------------------------------------------------------------------
- * net.h API
- * -------------------------------------------------------------------------*/
+static unsigned char *sock_entry(unsigned char s) {
+    return m4_sock_base + (unsigned int)s * 16;
+}
 
 int net_socket_open(void) {
-    unsigned char *resp;
+    m4_refresh();
     /* C_NETSOCKET: domain=0, type=0, protocol=6 (TCP) */
     m4_out(5);
-    m4_out(0x31); m4_out(0x43);    /* C_NETSOCKET LE */
+    m4_out(0x31); m4_out(0x43);
     m4_out(0); m4_out(0); m4_out(6);
     m4_strobe();
     m4_wait();
-    resp = m4_resp();
-    m4_socket = resp[3];
+    /* M4 now in RAM mode — read resp without re-selecting. */
+    m4_socket = m4_resp_buf[3];
+    m4_last_sock_state = M4_SOCK_STATE_IDLE;
+    m4_select_basic();
     return (m4_socket == 0xFF) ? -1 : 0;
 }
 
 int net_listen(unsigned int port) {
     (void)port;
-    return -1; /* TODO: implement server mode when needed */
+    return -1;
 }
 
 int net_connect(const unsigned char *ip, unsigned int port) {
     unsigned long timeout;
     unsigned char *sock;
+
+    m4_refresh();
+    sock = sock_entry(m4_socket);   /* pointer from ROM; data live after strobe */
+
     /* C_NETCONNECT: socket, 4×IP, 2×port LE */
     m4_out(9);
     m4_out(0x32); m4_out(0x43);
@@ -84,22 +89,32 @@ int net_connect(const unsigned char *ip, unsigned int port) {
     m4_out((unsigned int)(port >> 8));
     m4_strobe();
     m4_wait();
-    if (m4_resp()[3] == 0xFF) return -1;   /* command-level error */
 
-    /* Poll socket state: 0=connected, 1=connecting, 3=closed/error */
-    sock = m4_sock_info(m4_socket);
-    timeout = 3000000UL;
+    /* M4 now in RAM mode — check resp then poll sock WITHOUT re-selecting. */
+    if (m4_resp_buf[3] == 0xFF) { m4_select_basic(); return -1; }
+
+    /* Poll until state leaves "connecting in progress" (1).
+     * Timeout ~2 s at 4 MHz (each iteration ~40 cycles). */
+    timeout = 200000UL;
     while (timeout--) {
         unsigned char state = sock[0];
-        if (state == M4_SOCK_STATE_IDLE)   return 0;
-        if (state == M4_SOCK_STATE_CLOSED) return -1;
+        if (state != M4_SOCK_STATE_CONN) {
+            m4_last_sock_state = state;
+            m4_select_basic();
+            if (state == M4_SOCK_STATE_IDLE) return 0;
+            return -1;
+        }
     }
+    m4_select_basic();
     return -1;
 }
 
 int net_send(const unsigned char *buf, unsigned int len) {
     unsigned char *sock;
-    sock = m4_sock_info(m4_socket);
+
+    m4_refresh();
+    sock = sock_entry(m4_socket);   /* pointer from ROM; data live after strobe */
+
     while (len) {
         unsigned char chunk = (len > 250) ? 250 : (unsigned char)len;
         unsigned char i;
@@ -112,41 +127,24 @@ int net_send(const unsigned char *buf, unsigned int len) {
         for (i = 0; i < chunk; i++)
             m4_out((unsigned int)buf[i]);
         m4_strobe();
-        /* Wait for send to complete: poll state until != 2 (send in progress) */
+        /* M4 now in RAM mode — poll until send finishes, no re-select. */
         { unsigned int w = 60000U; while (sock[0] == M4_SOCK_STATE_SEND && w--) ; }
         buf += chunk;
         len -= chunk;
     }
-    return 0;
-}
-
-/* Issue one raw C_NETRECV and return what the firmware reports.
- * out_status: resp[3], out_len: resp[4:5] LE.  Returns 0 on success. */
-unsigned char net_recv_raw(unsigned char *out_status, unsigned int *out_len) {
-    unsigned char *resp;
-    unsigned int maxlen = 256;
-    m4_out(5);
-    m4_out(0x35); m4_out(0x43);
-    m4_out((unsigned int)m4_socket);
-    m4_out((unsigned int)(maxlen & 0xFF));
-    m4_out((unsigned int)(maxlen >> 8));
-    m4_strobe();
-    m4_wait();
-    resp = m4_resp();
-    *out_status = resp[3];
-    *out_len = (unsigned int)resp[4] | ((unsigned int)resp[5] << 8);
+    m4_select_basic();
     return 0;
 }
 
 unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
-    unsigned char *sock, *resp;
+    unsigned char *sock;
     unsigned int recv_len, i;
-    sock = m4_sock_info(m4_socket);
-    /* Skip the command if connected and RX counter says empty.
-     * When state is CLOSED, always try C_NETRECV — the M4 may clear sock[2:3]
-     * when the FIN arrives even if data was buffered just before it. */
-    if (sock[0] != M4_SOCK_STATE_CLOSED && !sock[2] && !sock[3]) return 0;
+
     if (maxlen > 2048) maxlen = 2048;
+
+    m4_refresh();
+    sock = sock_entry(m4_socket);
+
     /* C_NETRECV: socket, requested-size LE */
     m4_out(5);
     m4_out(0x35); m4_out(0x43);
@@ -155,13 +153,19 @@ unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
     m4_out((unsigned int)(maxlen >> 8));
     m4_strobe();
     m4_wait();
-    resp = m4_resp();
-    if (resp[3] != 0) return 0;    /* error status */
-    recv_len = (unsigned int)resp[4] | ((unsigned int)resp[5] << 8);
-    if (!recv_len) return 0;
+
+    /* M4 now in RAM mode — capture socket state for net_is_connected(), then
+     * read response data.  Must not call m4_select_basic() until after this. */
+    m4_last_sock_state = sock[0];
+
+    if (m4_resp_buf[3] != 0) { m4_select_basic(); return 0; }
+    recv_len = (unsigned int)m4_resp_buf[4] | ((unsigned int)m4_resp_buf[5] << 8);
+    if (!recv_len) { m4_select_basic(); return 0; }
     if (recv_len > maxlen) recv_len = maxlen;
     for (i = 0; i < recv_len; i++)
-        buf[i] = resp[6 + i];
+        buf[i] = m4_resp_buf[6 + i];
+
+    m4_select_basic();
     return recv_len;
 }
 
@@ -172,18 +176,21 @@ void net_close(void) {
     m4_strobe();
     m4_wait();
     m4_socket = 0;
+    m4_last_sock_state = M4_SOCK_STATE_CLOSED;
+    m4_select_basic();
 }
 
+/* net_is_connected: returns the socket state captured by the last net_recv()
+ * call (while M4 was in RAM mode).  Does NOT re-enter M4 ROM mode, so it is
+ * safe to call after screen writes that have called romen() / KL_ROM_RESTORE. */
 unsigned char net_is_connected(void) {
     if (!m4_socket) return 0;
-    return (m4_sock_info(m4_socket)[0] != M4_SOCK_STATE_CLOSED) ? 1 : 0;
+    return (m4_last_sock_state != M4_SOCK_STATE_CLOSED) ? 1 : 0;
 }
 
 unsigned int net_rx_available(void) {
     unsigned char *sock;
     if (!m4_socket) return 0;
-    sock = m4_sock_info(m4_socket);
-    /* Do NOT return 0 on CLOSED — remote may have sent data before closing.
-     * The loop caller handles CLOSED via net_is_connected(); we just report bytes. */
+    sock = sock_entry(m4_socket);
     return (unsigned int)sock[2] | ((unsigned int)sock[3] << 8);
 }

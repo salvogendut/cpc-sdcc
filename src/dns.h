@@ -22,8 +22,10 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
                 unsigned char *result_ip);
 
 /* M4 build only: diagnostic fields populated on every dns_resolve() call. */
-extern unsigned char dns_diag_resp3;      /* resp[3] from C_NETHOSTIP response */
-extern unsigned char dns_diag_sock0;      /* sock0[0] after poll exits */
+extern unsigned char dns_diag_resp[8];    /* resp[0..7] from C_NETHOSTIP response */
+extern unsigned char dns_diag_sock[8];    /* sock0[0..7] after poll exits */
+extern unsigned char dns_diag_resp3;      /* resp[3] (legacy alias) */
+extern unsigned char dns_diag_sock0;      /* sock0[0] (legacy alias) */
 extern unsigned char dns_diag_ip[4];      /* sock0[4..7] — resolved IP candidate */
 
 #endif /* DNS_H */

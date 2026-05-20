@@ -2,22 +2,34 @@
 #include "m4io.h"
 
 /*
- * M4 DNS via C_NETHOSTIP (0x4336) — verified against m4ewenterm/src/urlmenu.s.
+ * M4 DNS via C_NETHOSTIP (0x4336).
  *
- * dns_server_ip is ignored — M4 uses its own configured DNS server.
+ * Packet format:
+ *   byte 0:    hostname_length + 3   (= length of remaining bytes)
+ *   byte 1:    0x36 (C_NETHOSTIP LE)
+ *   byte 2:    0x43
+ *   bytes 3..: NUL-terminated hostname
  *
- * Protocol:
- *   Send C_NETHOSTIP with NUL-terminated hostname.
- *   resp[3] == 1  means lookup started successfully.
- *   Socket 0 info is at *(uint16_t*)0xFF06 (the table base, no N*16 offset).
- *   Poll socket 0 state until != 5 (DNS in progress).
- *   Resolved IP is at socket_0_info[4..7].
+ * After the strobe the M4 switches its bank to RAM mode, writing the
+ * response and socket data at the addresses pointed to by 0xFF02/0xFF06.
+ * Calling KL_ROM_SELECT (m4_select_rom) AFTER the strobe forces the M4
+ * back to ROM mode, making those addresses return stale ROM bytes.
+ *
+ * Correct sequence:
+ *   1. m4_select_rom() — select slot, M4 in ROM mode; read 0xFF02/0xFF06
+ *   2. send command bytes
+ *   3. m4_strobe() — M4 processes, switches to RAM mode
+ *   4. m4_wait()
+ *   5. read resp/sock using pointers obtained in step 1, NO further
+ *      m4_select_rom() calls (which would flip M4 back to ROM)
  */
 
-#define C_NETHOSTIP           0x4336
-#define M4_SOCK_STATE_DNS     5   /* DNS lookup in progress */
+#define M4_SOCK_STATE_DNS 5
 
-/* Diagnostic fields populated on every call. */
+unsigned char dns_diag_resp[8];   /* resp[0..7] */
+unsigned char dns_diag_sock[8];   /* sock0[0..7] */
+
+/* Legacy aliases */
 unsigned char dns_diag_resp3;
 unsigned char dns_diag_sock0;
 unsigned char dns_diag_ip[4];
@@ -28,6 +40,7 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     unsigned char *resp, *sock0;
     const char *p;
     unsigned long timeout;
+    unsigned char i;
 
     (void)dns_server_ip;
 
@@ -35,50 +48,54 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     p = hostname;
     while (*p++) len++;
 
-    /* C_NETHOSTIP payload is fixed at 16 bytes (matching m4ewenterm cmdlookup).
-     * Layout: 2 bytes command + up to 13 bytes hostname + NUL + zero-padding.
-     * Hostnames longer than 13 characters are not supported. */
-    m4_out(16);
-    m4_out(0x36); m4_out(0x43);         /* C_NETHOSTIP LE */
+    /*
+     * Select M4 ROM once to read the buffer/socket pointers, then send
+     * the command.  Do not call m4_select_rom() again after the strobe.
+     */
+    m4_select_rom();
+    resp  = (unsigned char *)(*(unsigned int *)0xFF02);
+    sock0 = (unsigned char *)(*(unsigned int *)0xFF06);
+
+    /* Send C_NETHOSTIP: [len+3, 0x36, 0x43, hostname, NUL] */
+    m4_out((unsigned int)(len + 3));
+    m4_out(0x36); m4_out(0x43);
     p = hostname;
-    while (*p && len < 13)
-        { m4_out((unsigned int)(unsigned char)*p++); len++; }
-    /* NUL + zero-pad to fill the 14-byte hostname area */
-    { unsigned char pad; for (pad = len; pad < 14; pad++) m4_out(0); }
+    while (*p)
+        m4_out((unsigned int)(unsigned char)*p++);
+    m4_out(0);
     m4_strobe();
     m4_wait();
 
-    resp = m4_resp();
+    /*
+     * M4 is now in RAM mode.  Read resp[0] directly — any value other
+     * than 0xFF means the command was accepted.
+     */
+    for (i = 0; i < 8; i++) dns_diag_resp[i] = resp[i];
     dns_diag_resp3 = resp[3];
 
-    /* Socket 0 info base (no N*16 offset — C_NETHOSTIP always uses socket 0). */
-    m4_select_rom();
-    sock0 = (unsigned char *)(*(unsigned int *)0xFF06);
+    if (resp[0] == 0xFF)
+        return -1;
 
-    if (resp[3] == 1) {
-        /* Async path: lookup started, poll until state leaves 5 */
-        timeout = 3000000UL;
-        while (timeout--) {
-            if (sock0[0] != M4_SOCK_STATE_DNS) break;
-        }
-        dns_diag_sock0 = sock0[0];
-        if (!timeout)      return -3;    /* timeout */
-        if (sock0[0] != 0) return -4;    /* lookup failed */
-    } else if (resp[3] == 0) {
-        /* Sync path: some firmware versions return 0 (OK) with result already
-         * in sock0[4..7] and sock0[0]==0 (IDLE). */
-        dns_diag_sock0 = sock0[0];
-        dns_diag_ip[0] = sock0[4]; dns_diag_ip[1] = sock0[5];
-        dns_diag_ip[2] = sock0[6]; dns_diag_ip[3] = sock0[7];
-        if (sock0[0] != 0) return -4;
-    } else {
-        return -1;                       /* unknown response */
+    /* Poll sock0[0] until DNS state clears (state 5 = in progress). */
+    timeout = 3000000UL;
+    while (timeout--) {
+        if (sock0[0] != M4_SOCK_STATE_DNS) break;
     }
 
-    /* Resolved IP at socket 0 info offset 4 */
-    dns_diag_ip[0] = result_ip[0] = sock0[4];
-    dns_diag_ip[1] = result_ip[1] = sock0[5];
-    dns_diag_ip[2] = result_ip[2] = sock0[6];
-    dns_diag_ip[3] = result_ip[3] = sock0[7];
+    for (i = 0; i < 8; i++) dns_diag_sock[i] = sock0[i];
+    dns_diag_sock0 = sock0[0];
+    dns_diag_ip[0] = sock0[4]; dns_diag_ip[1] = sock0[5];
+    dns_diag_ip[2] = sock0[6]; dns_diag_ip[3] = sock0[7];
+
+    if (!timeout)      return -3;
+    if (sock0[0] != 0) return -4;
+
+    if (!sock0[4] && !sock0[5] && !sock0[6] && !sock0[7])
+        return -4;
+
+    result_ip[0] = sock0[4];
+    result_ip[1] = sock0[5];
+    result_ip[2] = sock0[6];
+    result_ip[3] = sock0[7];
     return 0;
 }

@@ -1,22 +1,30 @@
 #include "../../src/cpcbios.h"
 #include "../../src/netinit.h"
 #include "../../src/dns.h"
+#ifdef NET_M4
+#include "../../src/net.h"
+#else
 #include "../../src/udp.h"
-#ifndef NET_M4
 #include "../../src/w5100.h"
 #endif
 
 #define NTP_PORT     123
 #define NTP_PKT_SIZE 48
-#define NTP_TIMEOUT  3000   /* ms */
+#define HTTP_PORT    80
 
 /* NTP epoch offset: seconds from 1900-01-01 to 1970-01-01 */
 #define NTP_EPOCH_OFFSET 2208988800UL
 
-static const char ntp_host[] = "pool.ntp.org";  /* 12 chars, fits M4 13-char limit */
+static const char ntp_host[] = "time.akamai.com";
 
+#ifdef NET_M4
+static unsigned char http_buf[512];
+static const char http_req[] =
+    "GET / HTTP/1.0\r\nHost: time.akamai.com\r\nConnection: close\r\n\r\n";
+#else
 static unsigned char ntp_packet[NTP_PKT_SIZE];
 static unsigned char ntp_reply[NTP_PKT_SIZE];
+#endif
 
 /* -------------------------------------------------------------------------
  * Print helpers
@@ -47,22 +55,79 @@ static void print_ip(const unsigned char *ip) {
 }
 
 /* -------------------------------------------------------------------------
- * Date/time conversion: Unix timestamp -> calendar fields
+ * M4 path: parse HTTP Date header
+ * Date: Www, DD Mon YYYY HH:MM:SS GMT
  * -------------------------------------------------------------------------*/
+#ifdef NET_M4
+static unsigned char parse_http_date(const unsigned char *buf, unsigned int len,
+    unsigned int *year, unsigned char *month, unsigned char *day,
+    unsigned char *hour, unsigned char *min, unsigned char *sec) {
 
+    static const char mon_names[12][4] = {
+        "Jan","Feb","Mar","Apr","May","Jun",
+        "Jul","Aug","Sep","Oct","Nov","Dec"
+    };
+    const unsigned char *p;
+    unsigned int i;
+    unsigned char m;
+
+    /* Find "Date: " */
+    for (i = 0; i + 25 <= len; i++) {
+        if (buf[i]   == 'D' && buf[i+1] == 'a' && buf[i+2] == 't' &&
+            buf[i+3] == 'e' && buf[i+4] == ':' && buf[i+5] == ' ')
+            goto found;
+    }
+    return 0;
+found:
+    p = buf + i + 6;    /* now at "Www, DD Mon YYYY HH:MM:SS GMT" */
+    p += 5;             /* skip "Www, " */
+
+    /* Day (possibly space-padded by some servers) */
+    if (*p == ' ') { *day = *(p+1) - '0'; }
+    else           { *day = (*p - '0') * 10 + (*(p+1) - '0'); }
+    p += 3;             /* skip "DD " */
+
+    /* Month name */
+    *month = 0;
+    for (m = 0; m < 12; m++) {
+        if (p[0] == (unsigned char)mon_names[m][0] &&
+            p[1] == (unsigned char)mon_names[m][1] &&
+            p[2] == (unsigned char)mon_names[m][2]) {
+            *month = m + 1;
+            break;
+        }
+    }
+    p += 4;             /* skip "Mon " */
+
+    /* Year */
+    *year = (unsigned int)(*p     - '0') * 1000u +
+            (unsigned int)(*(p+1) - '0') * 100u  +
+            (unsigned int)(*(p+2) - '0') * 10u   +
+            (unsigned int)(*(p+3) - '0');
+    p += 5;             /* skip "YYYY " */
+
+    /* HH:MM:SS */
+    *hour = (*p - '0') * 10 + (*(p+1) - '0'); p += 3;
+    *min  = (*p - '0') * 10 + (*(p+1) - '0'); p += 3;
+    *sec  = (*p - '0') * 10 + (*(p+1) - '0');
+    return 1;
+}
+#endif /* NET_M4 */
+
+/* -------------------------------------------------------------------------
+ * W5100S path: Unix timestamp -> calendar fields
+ * -------------------------------------------------------------------------*/
+#ifndef NET_M4
 static unsigned char is_leap(unsigned int y) {
     if (y % 4 != 0) return 0;
     if (y == 2100)  return 0;
     return 1;
 }
 
-/* Divide 32-bit t by small divisor d; return remainder, t becomes quotient.
- * Uses subtraction — only suitable for small divisors (≤ 60). */
 static unsigned char divmod32(unsigned long *t, unsigned char d) {
     unsigned long q = 0;
     unsigned long tmp = *t;
     unsigned long step = (unsigned long)d;
-    /* Find highest bit position of tmp relative to d */
     unsigned long cur = step;
     unsigned long qbit = 1;
     while (cur <= tmp >> 1) { cur <<= 1; qbit <<= 1; }
@@ -106,6 +171,7 @@ static void unix_to_datetime(unsigned long t,
     *month = m + 1;
     *day   = (unsigned char)(days + 1);
 }
+#endif /* !NET_M4 */
 
 /* -------------------------------------------------------------------------
  * Main
@@ -114,18 +180,20 @@ static void unix_to_datetime(unsigned long t,
 void main(void) {
     unsigned char dns_server[4];
     unsigned char ntp_ip[4];
-    unsigned long ntp_secs;
-    unsigned int  t0;
-    unsigned int  received;
     int rc;
 
     unsigned int  year;
     unsigned char month, day, hour, min, sec;
 
+#ifndef NET_M4
+    unsigned long ntp_secs;
+    unsigned int  received;
+#endif
+
     cpc_set_mode(1);
     cpc_cls();
-    cpc_print("NTP Client for CPC / Net4CPC\r\n");
-    cpc_print("==============================\r\n");
+    cpc_print("NTP Client for CPC\r\n");
+    cpc_print("==================\r\n");
 
     /* Step 1: network init */
     cpc_print("Initialising network...");
@@ -134,7 +202,7 @@ void main(void) {
     if (rc == -2) { cpc_print("no chip\r\n");        goto done; }
     cpc_print(" OK\r\n");
 
-    /* Step 2: DNS resolve NTP host */
+    /* Step 2: DNS resolve */
     cpc_print("Resolving: ");
     cpc_print(ntp_host);
     cpc_print("\r\n");
@@ -150,34 +218,84 @@ void main(void) {
 
     rc = dns_resolve(dns_server, ntp_host, ntp_ip);
     if (rc != 0) {
-        cpc_print("ERROR: DNS rc=");
-        print_uint((unsigned int)(rc < 0 ? (unsigned int)(-rc) : (unsigned int)rc));
-#ifdef NET_M4
-        cpc_print(" resp3="); print_uint(dns_diag_resp3);
-        cpc_print(" sock0="); print_uint(dns_diag_sock0);
-        cpc_print(" ip="); print_ip(dns_diag_ip);
-#endif
-        cpc_print("\r\n");
+        cpc_print("ERROR: DNS failed\r\n");
         goto done;
     }
 
-    cpc_print("NTP server IP: ");
+    cpc_print("Server IP: ");
     print_ip(ntp_ip);
     cpc_print("\r\n");
 
-    /* Step 3: open UDP socket (source port 12300) */
+#ifdef NET_M4
+    /* -----------------------------------------------------------------------
+     * M4 path: HTTP GET to time.akamai.com:80, parse Date: header
+     * -----------------------------------------------------------------------*/
+
+    /* Step 3: open TCP socket */
+    if (net_socket_open()) {
+        cpc_print("ERROR: Socket open failed\r\n");
+        goto done;
+    }
+
+    /* Step 4: connect */
+    cpc_print("Connecting to port 80...\r\n");
+    if (net_connect(ntp_ip, HTTP_PORT)) {
+        cpc_print("ERROR: Connect failed\r\n");
+        net_close();
+        goto done;
+    }
+    cpc_print("Connected\r\n");
+
+    /* Step 5: send HTTP GET */
+    cpc_print("Sending request...\r\n");
+    net_send((const unsigned char *)http_req,
+             (unsigned int)(sizeof(http_req) - 1));
+
+    /* Step 6: receive response into http_buf */
+    cpc_print("Waiting for reply...\r\n");
+    {
+        unsigned int total = 0;
+        unsigned int attempts;
+        for (attempts = 0; attempts < 200; attempts++) {
+            unsigned int n = net_recv(http_buf + total,
+                                      (unsigned int)(sizeof(http_buf) - 1) - total);
+            if (n) {
+                total += n;
+                if (total >= 256) break;   /* enough to have all headers */
+            }
+        }
+        net_close();
+
+        if (!total) {
+            cpc_print("ERROR: No reply\r\n");
+            goto done;
+        }
+
+        /* Step 7: parse Date header */
+        if (!parse_http_date(http_buf, total,
+                             &year, &month, &day, &hour, &min, &sec)) {
+            cpc_print("ERROR: No Date header\r\n");
+            goto done;
+        }
+    }
+
+#else
+    /* -----------------------------------------------------------------------
+     * W5100S path: UDP NTP
+     * -----------------------------------------------------------------------*/
+
+    /* Step 3: open UDP socket */
     if (udp_open(12300)) {
         cpc_print("ERROR: Socket failed\r\n");
         goto done;
     }
 
-    /* Step 4: build and send 48-byte SNTPv4 request
-     * Byte 0: LI=0, VN=4, Mode=3 → 0x23; rest zeros */
+    /* Step 4: build and send NTP request */
     {
         unsigned char i;
         for (i = 0; i < NTP_PKT_SIZE; i++) ntp_packet[i] = 0;
     }
-    ntp_packet[0] = 0x23;
+    ntp_packet[0] = 0x23;   /* LI=0, VN=4, Mode=3 */
 
     cpc_print("Sending NTP request...\r\n");
     if (udp_sendto(ntp_ip, NTP_PORT, ntp_packet, NTP_PKT_SIZE)) {
@@ -186,19 +304,21 @@ void main(void) {
         goto done;
     }
 
-    /* Step 5: wait up to 3 seconds for reply */
+    /* Step 5: poll for reply */
     cpc_print("Waiting for reply...\r\n");
-    t0 = cpc_time_ms();
-    while ((unsigned int)(cpc_time_ms() - t0) < NTP_TIMEOUT) {
-        if (udp_rx_available()) goto recv;
+    received = 0;
+    {
+        unsigned int attempts;
+        for (attempts = 0; attempts < 100; attempts++) {
+            received = udp_recv(ntp_reply, NTP_PKT_SIZE);
+            if (received) goto recv;
+        }
     }
     cpc_print("ERROR: Timeout - no NTP reply\r\n");
     udp_close();
     goto done;
 
 recv:
-    /* Step 6: receive reply — udp_recv strips the 8-byte W5100S UDP header */
-    received = udp_recv(ntp_reply, NTP_PKT_SIZE);
     udp_close();
 
     if (received < NTP_PKT_SIZE) {
@@ -206,7 +326,7 @@ recv:
         goto done;
     }
 
-    /* Step 7: validate mode (bits 0-2 must be 4 or 5) */
+    /* Step 6: validate */
     {
         unsigned char mode = ntp_reply[0] & 0x07;
         if (mode != 4 && mode != 5) {
@@ -214,26 +334,24 @@ recv:
             goto done;
         }
     }
-
-    /* Step 8: validate stratum (0 = Kiss-o'-Death) */
     if (ntp_reply[1] == 0) {
         cpc_print("ERROR: Kiss-o-Death packet received\r\n");
         goto done;
     }
 
-    /* Step 9: extract Transmit Timestamp (bytes 40-43, big-endian NTP seconds) */
+    /* Step 7: extract Transmit Timestamp (bytes 40-43, big-endian) */
     ntp_secs  = (unsigned long)ntp_reply[40] << 24;
     ntp_secs |= (unsigned long)ntp_reply[41] << 16;
     ntp_secs |= (unsigned long)ntp_reply[42] <<  8;
     ntp_secs |= (unsigned long)ntp_reply[43];
 
-    /* Step 10: NTP epoch → Unix epoch */
+    /* NTP epoch -> Unix epoch */
     ntp_secs -= NTP_EPOCH_OFFSET;
 
-    /* Step 11: convert to calendar date/time */
     unix_to_datetime(ntp_secs, &year, &month, &day, &hour, &min, &sec);
+#endif /* NET_M4 */
 
-    /* Step 12: display */
+    /* Display */
     cpc_print("UTC time: ");
     print_uint(year);
     cpc_print_char('-');

@@ -20,10 +20,12 @@
 
 void m4_rom_init(void);         /* scan upper ROMs, find and store M4 slot */
 void m4_select_rom(void);       /* re-select M4 upper ROM (via KL_ROM_SELECT 0xB90F) */
+unsigned char m4_rom_slot(void); /* return found ROM slot (0xFF = not found) */
 
 void m4_out(unsigned int b);
 void m4_strobe(void);
 unsigned char *m4_resp(void);   /* selects M4 ROM then returns *(uint16_t*)0xFF02 */
 void m4_wait(void);
+void m4_select_basic(void);     /* select BASIC ROM slot 0 — call after M4 ops complete */
 
 #endif /* M4IO_H */

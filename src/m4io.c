@@ -28,8 +28,9 @@ void m4_strobe(void) __naked {
 static void kl_rom_select_slot(unsigned char slot) __naked {
     (void)slot;
     __asm
-        ld      c, l            ; slot in L (sdcccall(1): first unsigned char in HL)
+        ld      c, a            ; slot in A (SDCC default calling convention)
         call    0xB90F
+        ei                      ; KL_ROM_SELECT may leave interrupts disabled
         ret
     __endasm;
 }
@@ -64,6 +65,10 @@ void m4_rom_init(void) {
     }
 }
 
+unsigned char m4_rom_slot(void) {
+    return m4_rom_num;
+}
+
 /* Select M4 ROM first so 0xFF02 is readable, then return response buffer pointer. */
 unsigned char *m4_resp(void) {
     m4_select_rom();
@@ -74,4 +79,16 @@ void m4_wait(void) {
     unsigned int i = 5000U;
     while (i--)
         ;
+}
+
+/* Re-select BASIC ROM (slot 0) so BASIC interrupt service routines can access
+ * it safely.  Call this after every M4 command sequence is complete (response
+ * data has been read) to ensure interrupts never land with M4 ROM active. */
+void m4_select_basic(void) __naked {
+    __asm
+        ld      c, #0
+        call    0xB90F
+        ei
+        ret
+    __endasm;
 }
