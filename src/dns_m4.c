@@ -17,9 +17,10 @@
 #define C_NETHOSTIP           0x4336
 #define M4_SOCK_STATE_DNS     5   /* DNS lookup in progress */
 
-/* Diagnostic fields set before returning any error — read from main.c. */
+/* Diagnostic fields populated on every call. */
 unsigned char dns_diag_resp3;
 unsigned char dns_diag_sock0;
+unsigned char dns_diag_ip[4];
 
 int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
                 unsigned char *result_ip) {
@@ -46,28 +47,35 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
 
     resp = m4_resp();
     dns_diag_resp3 = resp[3];
-    if (resp[3] != 1) return -1;         /* 1 = lookup started; anything else = error */
 
-    /* Socket 0 info starts at the socket table base (no N*16 offset for socket 0).
-     * Re-select M4 ROM before reading 0xFF06 — m4_resp() above selected it but
-     * the compiler may have inserted a call between there and here. */
+    /* Socket 0 info base (no N*16 offset — C_NETHOSTIP always uses socket 0). */
     m4_select_rom();
     sock0 = (unsigned char *)(*(unsigned int *)0xFF06);
 
-    /* Poll until DNS lookup completes (state leaves 5) */
-    timeout = 3000000UL;
-    while (timeout--) {
-        if (sock0[0] != M4_SOCK_STATE_DNS) break;
+    if (resp[3] == 1) {
+        /* Async path: lookup started, poll until state leaves 5 */
+        timeout = 3000000UL;
+        while (timeout--) {
+            if (sock0[0] != M4_SOCK_STATE_DNS) break;
+        }
+        dns_diag_sock0 = sock0[0];
+        if (!timeout)      return -3;    /* timeout */
+        if (sock0[0] != 0) return -4;    /* lookup failed */
+    } else if (resp[3] == 0) {
+        /* Sync path: some firmware versions return 0 (OK) with result already
+         * in sock0[4..7] and sock0[0]==0 (IDLE). */
+        dns_diag_sock0 = sock0[0];
+        dns_diag_ip[0] = sock0[4]; dns_diag_ip[1] = sock0[5];
+        dns_diag_ip[2] = sock0[6]; dns_diag_ip[3] = sock0[7];
+        if (sock0[0] != 0) return -4;
+    } else {
+        return -1;                       /* unknown response */
     }
-    dns_diag_sock0 = sock0[0];
-    if (!timeout) return -3;             /* timeout */
-
-    if (sock0[0] != 0) return -4;        /* lookup failed */
 
     /* Resolved IP at socket 0 info offset 4 */
-    result_ip[0] = sock0[4];
-    result_ip[1] = sock0[5];
-    result_ip[2] = sock0[6];
-    result_ip[3] = sock0[7];
+    dns_diag_ip[0] = result_ip[0] = sock0[4];
+    dns_diag_ip[1] = result_ip[1] = sock0[5];
+    dns_diag_ip[2] = result_ip[2] = sock0[6];
+    dns_diag_ip[3] = result_ip[3] = sock0[7];
     return 0;
 }

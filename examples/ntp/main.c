@@ -155,6 +155,7 @@ void main(void) {
 #ifdef NET_M4
         cpc_print(" resp3="); print_uint(dns_diag_resp3);
         cpc_print(" sock0="); print_uint(dns_diag_sock0);
+        cpc_print(" ip=");    print_ip(dns_diag_ip);
 #endif
         cpc_print("\r\n");
         goto done;
