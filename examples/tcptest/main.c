@@ -14,10 +14,12 @@
 #define SERVER_PORT 80
 
 #ifdef NET_M4
+/* HTTP/1.1: persistent connection (default). Server delivers data while
+ * state=0, so sock[2:3] is populated before any FIN arrives.
+ * We drain until idle then close ourselves. */
 static const char http_request[] =
-    "GET / HTTP/1.0\r\n"
+    "GET / HTTP/1.1\r\n"
     "Host: 192.168.68.1\r\n"
-    "Connection: close\r\n"
     "\r\n";
 #else
 static const char http_request[] =
@@ -118,21 +120,30 @@ void main(void) {
     net_send((const unsigned char *)http_request,
              sizeof(http_request) - 1);
 
-#ifdef NET_M4
-    {
-        unsigned char st; unsigned int rlen;
-        cpc_print("conn="); print_uint(net_is_connected());
-        cpc_print(" rx=");  print_uint(net_rx_available());
-        cpc_print("\r\n");
-        net_recv_raw(&st, &rlen);
-        cpc_print("raw: st="); print_hex_byte(st);
-        cpc_print(" len="); print_uint(rlen);
-        cpc_print("\r\n");
-    }
-#endif
-
     cpc_print("Response:\r\n");
     total = 0;
+#ifdef NET_M4
+    /* HTTP/1.1 keep-alive: server holds connection open after sending.
+     * Drain until idle (no new bytes for ~4000 empty polls), then close. */
+    {
+        unsigned int idle = 0;
+        while (net_is_connected() && idle < 4000U) {
+            received = net_recv(rxbuf, sizeof(rxbuf));
+            if (received) {
+                unsigned int i;
+                for (i = 0; i < received; i++) {
+                    unsigned char c = rxbuf[i];
+                    if (c >= 0x20 || c == '\r' || c == '\n')
+                        cpc_print_char(c);
+                }
+                total += received;
+                idle = 0;
+            } else {
+                idle++;
+            }
+        }
+    }
+#else
     while (net_is_connected() || net_rx_available()) {
         received = net_recv(rxbuf, sizeof(rxbuf));
         if (received) {
@@ -145,21 +156,7 @@ void main(void) {
             total += received;
         }
     }
-    /* Drain after close: M4 may clear sock[2:3] when FIN arrives even if
-     * data was buffered just before it; net_recv() will still issue C_NETRECV
-     * on CLOSED state so we pull whatever the firmware has left. */
-    do {
-        received = net_recv(rxbuf, sizeof(rxbuf));
-        if (received) {
-            unsigned int i;
-            for (i = 0; i < received; i++) {
-                unsigned char c = rxbuf[i];
-                if (c >= 0x20 || c == '\r' || c == '\n')
-                    cpc_print_char(c);
-            }
-            total += received;
-        }
-    } while (received);
+#endif
 
     cpc_print("\r\nDone. Bytes: ");
     print_uint(total);
