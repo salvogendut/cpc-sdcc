@@ -138,6 +138,21 @@ void main(void) {
             total += received;
         }
     }
+    /* Drain after close: M4 may clear sock[2:3] when FIN arrives even if
+     * data was buffered just before it; net_recv() will still issue C_NETRECV
+     * on CLOSED state so we pull whatever the firmware has left. */
+    do {
+        received = net_recv(rxbuf, sizeof(rxbuf));
+        if (received) {
+            unsigned int i;
+            for (i = 0; i < received; i++) {
+                unsigned char c = rxbuf[i];
+                if (c >= 0x20 || c == '\r' || c == '\n')
+                    cpc_print_char(c);
+            }
+            total += received;
+        }
+    } while (received);
 
     cpc_print("\r\nDone. Bytes: ");
     print_uint(total);

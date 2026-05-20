@@ -124,8 +124,10 @@ unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
     unsigned char *sock, *resp;
     unsigned int recv_len, i;
     sock = m4_sock_info(m4_socket);
-    /* Fast check: is there data in the RX buffer? */
-    if (!sock[2] && !sock[3]) return 0;
+    /* Skip the command if connected and RX counter says empty.
+     * When state is CLOSED, always try C_NETRECV — the M4 may clear sock[2:3]
+     * when the FIN arrives even if data was buffered just before it. */
+    if (sock[0] != M4_SOCK_STATE_CLOSED && !sock[2] && !sock[3]) return 0;
     if (maxlen > 2048) maxlen = 2048;
     /* C_NETRECV: socket, requested-size LE */
     m4_out(5);
