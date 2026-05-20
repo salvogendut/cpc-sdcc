@@ -2,21 +2,29 @@
 #include "../../src/netinit.h"
 #include "../../src/net.h"
 #ifdef NET_M4
-/* Connect directly to gateway — avoids DNS dependency for basic connectivity test */
-#define M4_TEST_IP0 192
-#define M4_TEST_IP1 168
-#define M4_TEST_IP2  68
-#define M4_TEST_IP3   1
+/* example.com (93.184.216.34) — IANA host, plain HTTP on port 80 guaranteed */
+#define M4_TEST_IP0  93
+#define M4_TEST_IP1 184
+#define M4_TEST_IP2 216
+#define M4_TEST_IP3  34
 #else
 #include "../../src/w5100.h"
 #endif
 
 #define SERVER_PORT 80
 
+#ifdef NET_M4
+static const char http_request[] =
+    "GET / HTTP/1.0\r\n"
+    "Host: example.com\r\n"
+    "Connection: close\r\n"
+    "\r\n";
+#else
 static const char http_request[] =
     "GET / HTTP/1.0\r\n"
     "Connection: close\r\n"
     "\r\n";
+#endif
 
 static unsigned char rxbuf[256];
 
