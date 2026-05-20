@@ -110,6 +110,12 @@ void main(void) {
     net_send((const unsigned char *)http_request,
              sizeof(http_request) - 1);
 
+#ifdef NET_M4
+    cpc_print("conn="); print_uint(net_is_connected());
+    cpc_print(" rx=");  print_uint(net_rx_available());
+    cpc_print("\r\n");
+#endif
+
     cpc_print("Response:\r\n");
     total = 0;
     while (net_is_connected() || net_rx_available()) {
