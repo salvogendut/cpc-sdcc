@@ -36,14 +36,17 @@ src/
   bank.h/c      iRAM1024 DK'Tronics/Yarek banking driver: bank_select/bank_restore
   amsdos_wrap.py  Adds 128-byte AMSDOS type-2 binary header to a raw binary
 
-  M4 WiFi card port (branch m4-port — compile with -DNET_M4):
+  M4 WiFi card port (compile with -DNET_M4):
   m4io.h/c        Low-level M4 I/O: m4_out/m4_strobe/m4_resp/m4_wait
                   m4_rom_init() scans upper ROMs for M4 slot;
                   m4_select_rom() re-selects it via KL_ROM_SELECT (0xB90F)
-                  before every access to 0xFF02/0xFF06
+                  before every access to 0xFF02/0xFF06;
+                  m4_select_basic() restores BASIC ROM (slot 0) after every
+                  M4 operation so BASIC ISRs never fire with M4 ROM active
   net_m4.c        TCP socket API (implements net.h) using M4 commands
   dns_m4.c        DNS via C_NETHOSTIP (implements dns.h); result in socket 0 info
-  udp_m4.c        UDP socket API (implements udp.h) — UNVERIFIED on hardware
+  udp_m4.c        UDP socket API stub (implements udp.h) — M4 firmware is TCP only;
+                  C_NETSOCKET only creates TCP sockets; UDP is not supported
   netinit_m4.c    No-op net_init_from_file() — M4 is self-configured
 
 examples/
@@ -51,7 +54,8 @@ examples/
   tcptest/      Opens a TCP connection and performs an HTTP GET
   dnstest/      Resolves a hostname via DNS and prints the IP
   wget/         HTTP file downloader — prompts for URL, saves file to disk
-  ntp/          NTP/SNTP time client — resolves time.cloudflare.com,
+  ntp/          NTP/SNTP time client — W5100S: UDP NTP (pool.ntp.org);
+                M4: HTTP GET to example.com, parses Date: header;
                 displays current UTC date and time
   telnet/       ANSI/VT100 telnet client — Mode 2 (80×25) direct screen
                 writes, Code Page 437 charset, hardware scroll, ESC[ cursor
@@ -75,7 +79,7 @@ targets in a single run:
 |------------------|--------------------------|--------------------|
 | `bin/`           | ULIfAC / real floppy     | `NAME.BAS`         |
 | `bin/albireo/`   | Albireo (Unidos)         | `NAMEA.BAS`        |
-| `bin/m4/`        | M4 WiFi card (branch `m4-port`) | `NAME.BAS` |
+| `bin/m4/`        | M4 WiFi card             | `NAME.BAS`         |
 
 ```bash
 cd examples/tcptest && ./build.sh
@@ -123,7 +127,7 @@ Prebuilt standard CPC DSK images are provided in `images/`:
 | Image | Contents |
 |---|---|
 | `n4c_tools.dsk` | All ULIfAC/floppy binaries + `N4CCFG.BAS` |
-| `m4_tools.dsk` | M4 WiFi card binaries (branch `m4-port`) |
+| `m4_tools.dsk` | M4 WiFi card binaries |
 
 Load in any CPC emulator (WinAPE, JavaCPC, etc.) or write to a Gotek USB drive.
 
@@ -369,7 +373,7 @@ supports one CAS input file open at a time — opening a web file while the
 manifest is still open would silently close the manifest, causing only the
 first entry to be processed.
 
-## M4 WiFi card port (branch `m4-port`)
+## M4 WiFi card port
 
 The `m4-port` branch adds support for the [M4 Board](https://github.com/M4Duke/)
 WiFi card as a network backend.  Ported so far: `tcptest`, `ntp`, `telnet`.
@@ -419,6 +423,14 @@ command table.  After that, `m4_select_rom()` re-selects that slot via
 `KL_ROM_SELECT` (firmware 0xB90F) before every access to `0xFF02` or
 `0xFF06`.  This is required for any app that writes to the screen during
 network I/O (i.e. telnet).
+
+After every completed M4 command sequence, `m4_select_basic()` calls
+`KL_ROM_SELECT(0)` to restore the BASIC ROM.  This is critical for stability:
+BASIC cursor-blink and timer ISRs access `0xC000–0xFFFF`; if the M4 ROM is
+still selected when an interrupt fires, those ISRs execute M4 ROM bytes as Z80
+instructions and the machine crashes.  Every `net_send`, `net_recv`,
+`net_connect`, `net_socket_open`, `net_close`, and `dns_resolve` call ends with
+`m4_select_basic()`.
 
 ### No configuration file needed
 
