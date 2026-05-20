@@ -119,9 +119,16 @@ void main(void) {
              sizeof(http_request) - 1);
 
 #ifdef NET_M4
-    cpc_print("conn="); print_uint(net_is_connected());
-    cpc_print(" rx=");  print_uint(net_rx_available());
-    cpc_print("\r\n");
+    {
+        unsigned char st; unsigned int rlen;
+        cpc_print("conn="); print_uint(net_is_connected());
+        cpc_print(" rx=");  print_uint(net_rx_available());
+        cpc_print("\r\n");
+        net_recv_raw(&st, &rlen);
+        cpc_print("raw: st="); print_hex_byte(st);
+        cpc_print(" len="); print_uint(rlen);
+        cpc_print("\r\n");
+    }
 #endif
 
     cpc_print("Response:\r\n");

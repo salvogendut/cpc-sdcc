@@ -120,6 +120,24 @@ int net_send(const unsigned char *buf, unsigned int len) {
     return 0;
 }
 
+/* Issue one raw C_NETRECV and return what the firmware reports.
+ * out_status: resp[3], out_len: resp[4:5] LE.  Returns 0 on success. */
+unsigned char net_recv_raw(unsigned char *out_status, unsigned int *out_len) {
+    unsigned char *resp;
+    unsigned int maxlen = 256;
+    m4_out(5);
+    m4_out(0x35); m4_out(0x43);
+    m4_out((unsigned int)m4_socket);
+    m4_out((unsigned int)(maxlen & 0xFF));
+    m4_out((unsigned int)(maxlen >> 8));
+    m4_strobe();
+    m4_wait();
+    resp = m4_resp();
+    *out_status = resp[3];
+    *out_len = (unsigned int)resp[4] | ((unsigned int)resp[5] << 8);
+    return 0;
+}
+
 unsigned int net_recv(unsigned char *buf, unsigned int maxlen) {
     unsigned char *sock, *resp;
     unsigned int recv_len, i;
