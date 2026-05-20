@@ -2,8 +2,11 @@
 #include "../../src/netinit.h"
 #include "../../src/net.h"
 #ifdef NET_M4
-#include "../../src/dns.h"
-#define M4_TEST_HOST "example.com"
+/* Connect directly to gateway — avoids DNS dependency for basic connectivity test */
+#define M4_TEST_IP0 192
+#define M4_TEST_IP1 168
+#define M4_TEST_IP2  68
+#define M4_TEST_IP3   1
 #else
 #include "../../src/w5100.h"
 #endif
@@ -42,32 +45,32 @@ static void print_ip(const unsigned char *ip) {
 void main(void) {
     unsigned char server_ip[4];
     unsigned int received, total;
+#ifndef NET_M4
     int rc;
+#endif
 
     cpc_set_mode(1);
     cpc_cls();
     cpc_print("TCP test\r\n");
 
+#ifdef NET_M4
+    cpc_print("M4 init... ");
+    net_init_from_file();
+    cpc_print("OK\r\n");
+#else
     cpc_print("Reading N4C.CFG... ");
     rc = net_init_from_file();
-    if (rc == -1) {
-        cpc_print("file not found\r\n");
-        return;
-    }
-    if (rc == -2) {
-        cpc_print("no chip\r\n");
-        return;
-    }
+    if (rc == -1) { cpc_print("file not found\r\n"); return; }
+    if (rc == -2) { cpc_print("no chip\r\n"); return; }
     cpc_print("OK\r\n");
+#endif
 
 #ifdef NET_M4
-    {
-        unsigned char dummy_dns[4] = {0, 0, 0, 0};
-        cpc_print("Resolving " M4_TEST_HOST "...\r\n");
-        rc = dns_resolve(dummy_dns, M4_TEST_HOST, server_ip);
-        if (rc) { cpc_print("DNS FAIL\r\n"); return; }
-        cpc_print("Target: "); print_ip(server_ip); cpc_print("\r\n");
-    }
+    server_ip[0] = M4_TEST_IP0;
+    server_ip[1] = M4_TEST_IP1;
+    server_ip[2] = M4_TEST_IP2;
+    server_ip[3] = M4_TEST_IP3;
+    cpc_print("Target: "); print_ip(server_ip); cpc_print("\r\n");
 #else
     server_ip[0] = w5100_read_reg(N_GAR0);
     server_ip[1] = w5100_read_reg(N_GAR0 + 1);

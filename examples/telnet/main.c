@@ -132,7 +132,6 @@ void main(void) {
     cpc_print("TELNET for CPC / M4 WiFi\r\n");
     cpc_print("==========================\r\n");
     cpc_print("Initialising network...");
-    m4_rom_init();
     (void)net_init_from_file();
     cpc_print(" OK\r\n");
 #else
