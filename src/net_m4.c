@@ -163,6 +163,7 @@ unsigned int net_rx_available(void) {
     unsigned char *sock;
     if (!m4_socket) return 0;
     sock = m4_sock_info(m4_socket);
-    if (sock[0] == M4_SOCK_STATE_CLOSED) return 0;
+    /* Do NOT return 0 on CLOSED — remote may have sent data before closing.
+     * The loop caller handles CLOSED via net_is_connected(); we just report bytes. */
     return (unsigned int)sock[2] | ((unsigned int)sock[3] << 8);
 }
