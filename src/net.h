@@ -35,4 +35,8 @@ unsigned char net_is_connected(void);
 /* Returns number of bytes waiting in the RX buffer (non-blocking check). */
 unsigned int net_rx_available(void);
 
+/* Debug: issue one raw C_NETRECV and report firmware response fields.
+ * Only available on M4 build; out_status=resp[3], out_len=resp[4:5]. */
+unsigned char net_recv_raw(unsigned char *out_status, unsigned int *out_len);
+
 #endif /* NET_H */

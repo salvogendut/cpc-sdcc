@@ -2,7 +2,9 @@
 #include "../../src/netinit.h"
 #include "../../src/dns.h"
 #include "../../src/net.h"
+#ifndef NET_M4
 #include "../../src/w5100.h"
+#endif
 #include "screen.h"
 #include "ansi.h"
 #include "keyboard.h"
@@ -124,15 +126,23 @@ void main(void) {
 
     cpc_set_mode(1);
     cpc_cls();
+#ifdef NET_M4
+    cpc_print("TELNET for CPC / M4 WiFi\r\n");
+    cpc_print("==========================\r\n");
+    cpc_print("Initialising network...");
+    (void)net_init_from_file();
+    cpc_print(" OK\r\n");
+
+#else
     cpc_print("TELNET for CPC / Net4CPC\r\n");
     cpc_print("==========================\r\n");
-
     /* Step 1: network init */
     cpc_print("Initialising network...");
     rc = net_init_from_file();
     if (rc == -1) { cpc_print("file not found\r\n"); goto done; }
     if (rc == -2) { cpc_print("no chip\r\n");        goto done; }
     cpc_print(" OK\r\n");
+#endif
 
     /* Step 2: resolve or parse host */
     if (*CFG_HOST >= '0' && *CFG_HOST <= '9') {
@@ -141,12 +151,19 @@ void main(void) {
         cpc_print("Resolving: ");
         cpc_print(CFG_HOST);
         cpc_print("\r\n");
+#ifdef NET_M4
+        dns_server[0] = dns_server[1] = dns_server[2] = dns_server[3] = 0;
+#else
         dns_server[0] = w5100_read_reg(N_DNS0);
         dns_server[1] = w5100_read_reg(N_DNS0 + 1);
         dns_server[2] = w5100_read_reg(N_DNS0 + 2);
         dns_server[3] = w5100_read_reg(N_DNS0 + 3);
+#endif
         rc = dns_resolve(dns_server, CFG_HOST, server_ip);
-        if (rc != 0) { cpc_print("ERROR: DNS failed\r\n"); goto done; }
+        if (rc != 0) {
+            cpc_print("ERROR: DNS failed\r\n");
+            goto done;
+        }
     }
     cpc_print("Server IP: ");
     print_ip(server_ip);
@@ -186,11 +203,16 @@ void main(void) {
 
     screen_cursor_draw();
 
-    /* Step 4: main telnet loop */
-    while (net_is_connected() || net_rx_available()) {
+    /* Step 4: main telnet loop.
+     * Exit when net_recv() returns no data AND socket is closed.
+     * Checking net_is_connected() after net_recv() uses the socket state
+     * captured inside net_recv() while M4 was in RAM mode — reliable even
+     * after screen writes that call romen() / KL_ROM_RESTORE. */
+    while (1) {
 
         /* Receive and process server data */
         received = net_recv(recv_buf, RECV_BUF_SIZE);
+        if (!received && !net_is_connected()) break;
         if (received) {
             unsigned int i;
             screen_cursor_erase();
@@ -301,12 +323,12 @@ void main(void) {
     screen_cursor_erase();
     keyboard_restore();
     net_close();
-    {
-        const char *msg = "\r\n---\r\nDisconnected.\r\n";
-        while (*msg) screen_write((unsigned char)*msg++);
-    }
+
+    /* Restore Mode 1 so BASIC gets its normal 40-column screen back. */
+    cpc_set_mode(1);
+    cpc_cls();
 
 done:
-    cpc_print("Press any key.\r\n");
+    cpc_print("Disconnected. Press any key.\r\n");
     cpc_wait_key();
 }

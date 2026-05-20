@@ -36,12 +36,26 @@ src/
   bank.h/c      iRAM1024 DK'Tronics/Yarek banking driver: bank_select/bank_restore
   amsdos_wrap.py  Adds 128-byte AMSDOS type-2 binary header to a raw binary
 
+  M4 WiFi card port (compile with -DNET_M4):
+  m4io.h/c        Low-level M4 I/O: m4_out/m4_strobe/m4_resp/m4_wait
+                  m4_rom_init() scans upper ROMs for M4 slot;
+                  m4_select_rom() re-selects it via KL_ROM_SELECT (0xB90F)
+                  before every access to 0xFF02/0xFF06;
+                  m4_select_basic() restores BASIC ROM (slot 0) after every
+                  M4 operation so BASIC ISRs never fire with M4 ROM active
+  net_m4.c        TCP socket API (implements net.h) using M4 commands
+  dns_m4.c        DNS via C_NETHOSTIP (implements dns.h); result in socket 0 info
+  udp_m4.c        UDP socket API stub (implements udp.h) — M4 firmware is TCP only;
+                  C_NETSOCKET only creates TCP sockets; UDP is not supported
+  netinit_m4.c    No-op net_init_from_file() — M4 is self-configured
+
 examples/
   hello/        Prints "Hello, CPC!" and returns to BASIC
   tcptest/      Opens a TCP connection and performs an HTTP GET
   dnstest/      Resolves a hostname via DNS and prints the IP
   wget/         HTTP file downloader — prompts for URL, saves file to disk
-  ntp/          NTP/SNTP time client — resolves time.cloudflare.com,
+  ntp/          NTP/SNTP time client — W5100S: UDP NTP (pool.ntp.org);
+                M4: HTTP GET to example.com, parses Date: header;
                 displays current UTC date and time
   telnet/       ANSI/VT100 telnet client — Mode 2 (80×25) direct screen
                 writes, Code Page 437 charset, hardware scroll, ESC[ cursor
@@ -58,18 +72,20 @@ examples/
 
 ## Building
 
-Each example has its own `build.sh` that produces **two sets of binaries**
-in a single run:
+Each example has its own `build.sh` that produces binaries for all supported
+targets in a single run:
 
-| Output directory | Target hardware          | BASIC loader   |
-|------------------|--------------------------|----------------|
-| `bin/`           | ULIfAC / real floppy     | `NAME.BAS`     |
-| `bin/albireo/`   | Albireo (Unidos)      | `NAMEA.BAS`    |
+| Output directory | Target hardware          | BASIC loader       |
+|------------------|--------------------------|--------------------|
+| `bin/`           | ULIfAC / real floppy     | `NAME.BAS`         |
+| `bin/albireo/`   | Albireo (Unidos)         | `NAMEA.BAS`        |
+| `bin/m4/`        | M4 WiFi card             | `NAME.BAS`         |
 
 ```bash
 cd examples/tcptest && ./build.sh
 # bin/TCPTEST.BIN + bin/TCPTEST.BAS
 # bin/albireo/TCPTEST.BIN + bin/albireo/TCPTESTA.BAS
+# bin/m4/TCPTEST.BIN + bin/m4/TCPTEST.BAS
 
 cd examples/dnstest && ./build.sh
 # bin/DNSTEST.BIN + bin/DNSTEST.BAS
@@ -82,10 +98,12 @@ cd examples/wget && ./build.sh
 cd examples/ntp && ./build.sh
 # bin/NTP.BIN + bin/NTP.BAS
 # bin/albireo/NTP.BIN + bin/albireo/NTPA.BAS
+# bin/m4/NTP.BIN + bin/m4/NTP.BAS
 
 cd examples/telnet && ./build.sh
 # bin/TELNET.BIN + bin/CHARSET.BIN + bin/TELNET.BAS
 # bin/albireo/TELNET.BIN + bin/albireo/CHARSET.BIN + bin/albireo/TELNETA.BAS
+# bin/m4/TELNET.BIN + bin/m4/CHARSET.BIN + bin/m4/TELNETM4.BAS
 
 cd examples/telnetd && ./build.sh
 # bin/TELNETD.BIN + bin/TELNETD.BAS
@@ -102,23 +120,24 @@ cd examples/hello && ./build.sh
 Copy all files from the relevant output directory to a CPC disk and
 `RUN` the `.BAS` loader.
 
-### Ready-to-use disk image
+### Ready-to-use disk images
 
-A prebuilt standard CPC DSK image with all ULIfAC binaries is provided:
+Prebuilt standard CPC DSK images are provided in `images/`:
 
-```
-images/n4c_tools.dsk
-```
+| Image | Contents |
+|---|---|
+| `n4c_tools.dsk` | All ULIfAC/floppy binaries + `N4CCFG.BAS` |
+| `m4_tools.dsk` | M4 WiFi card binaries |
 
-Load it in any CPC emulator (WinAPE, JavaCPC, etc.) or write it to a Gotek
-USB drive.  It contains `N4CCFG.BAS` — run it first to create your `N4C.CFG`:
+Load in any CPC emulator (WinAPE, JavaCPC, etc.) or write to a Gotek USB drive.
 
-```
-RUN "N4CCFG.BAS"
-```
+**ULIfAC disk:** run `N4CCFG.BAS` first to create your `N4C.CFG` —
+it prompts for IP, mask, gateway and DNS server.
 
-It prompts for IP address, subnet mask, gateway, and DNS server, then writes
-`N4C.CFG` with the correct CR+LF line endings.  Rebuild the DSK with:
+**M4 disk:** no `N4C.CFG` needed — the M4 card uses its own WiFi config
+(set via the M4 web interface or `|netset` RSX command).  Just `RUN "TCPTEST.BAS"` etc.
+
+Rebuild both DSK images with:
 
 ```bash
 ./make_dsk.sh          # requires iDSK from github.com/reidrac/cpc-mastering
@@ -353,6 +372,88 @@ closed before any web file is opened.  This is necessary because AMSDOS only
 supports one CAS input file open at a time — opening a web file while the
 manifest is still open would silently close the manifest, causing only the
 first entry to be processed.
+
+## M4 WiFi card port
+
+The `m4-port` branch adds support for the [M4 Board](https://github.com/M4Duke/)
+WiFi card as a network backend.  Ported so far: `tcptest`, `ntp`, `telnet`.
+
+### How it works
+
+The M4 card exposes a command protocol over two CPC I/O ports:
+
+| Port | Use |
+|---|---|
+| `0xFE00` | Write command bytes one at a time (`OUT (C), A` with BC=0xFE00) |
+| `0xFC00` | Strobe after last byte to signal end of packet |
+
+Response data is accessible via memory reads from the M4 ROM area:
+- `*(uint16_t*)0xFF02` — pointer to the response buffer
+- `*(uint16_t*)0xFF06` — pointer to the socket info table
+
+Packet format: `byte[0]` = payload length (not counting itself), `byte[1:2]` = command word LE, `byte[3+]` = parameters.
+
+### Socket states (verified from m4ewenterm source)
+
+| State | Meaning |
+|---|---|
+| 0 | IDLE / OK — **connected** state; also state after send completes |
+| 1 | Connecting in progress |
+| 2 | Send in progress |
+| 3 | Remote closed connection |
+| 5 | DNS lookup in progress (socket 0 only) |
+
+### DNS resolution
+
+`C_NETHOSTIP` (0x4336) handles DNS internally.  Send the NUL-terminated
+hostname; `resp[3]` = 1 means lookup started; poll socket 0 state until
+`!= 5`; the resolved IP is then at `socket_0_info[4..7]`, not in the
+response buffer.
+
+### ROM management
+
+The response buffer (`0xFF02`) and socket info table (`0xFF06`) live in the
+M4 ROM's address space (`0xC000–0xFFFF`).  Any CPC firmware call
+(`txt_output`, `km_read_char`, etc.) may change which upper ROM is paged in,
+making those addresses temporarily inaccessible.
+
+`m4_rom_init()` (called once at startup) scans all 128 upper ROM slots for
+the M4 ROM by matching the RSX name string `"M4 BOAR\xC4"` at the slot's
+command table.  After that, `m4_select_rom()` re-selects that slot via
+`KL_ROM_SELECT` (firmware 0xB90F) before every access to `0xFF02` or
+`0xFF06`.  This is required for any app that writes to the screen during
+network I/O (i.e. telnet).
+
+After every completed M4 command sequence, `m4_select_basic()` calls
+`KL_ROM_SELECT(0)` to restore the BASIC ROM.  This is critical for stability:
+BASIC cursor-blink and timer ISRs access `0xC000–0xFFFF`; if the M4 ROM is
+still selected when an interrupt fires, those ISRs execute M4 ROM bytes as Z80
+instructions and the machine crashes.  Every `net_send`, `net_recv`,
+`net_connect`, `net_socket_open`, `net_close`, and `dns_resolve` call ends with
+`m4_select_basic()`.
+
+### No configuration file needed
+
+The M4 card is pre-configured via its own `config.txt` on microSD or the
+`|netset` RSX command.  `net_init_from_file()` is a no-op; the M4 BAS
+launchers skip the `N4C.CFG` reading step entirely.
+
+### Send size limit
+
+`C_NETSEND` maximum payload is **250 bytes per call** (5-byte overhead means
+`pkt[0] = 5 + data_len`; max `pkt[0]` = 255).  The driver handles chunking
+transparently in `net_send()`.
+
+### Build for M4
+
+```bash
+cd examples/tcptest && ./build.sh   # produces bin/m4/TCPTEST.BIN
+cd examples/ntp     && ./build.sh   # produces bin/m4/NTP.BIN
+cd examples/telnet  && ./build.sh   # produces bin/m4/TELNET.BIN + CHARSET.BIN
+```
+
+The M4 build pass uses `-DNET_M4` and links `m4io.rel`, `net_m4.rel`,
+`dns_m4.rel`, `netinit_m4.rel` instead of the W5100S equivalents.
 
 ## W5100S hardware (Net4CPC)
 
