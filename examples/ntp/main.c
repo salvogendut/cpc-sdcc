@@ -149,7 +149,16 @@ void main(void) {
 #endif
 
     rc = dns_resolve(dns_server, ntp_host, ntp_ip);
-    if (rc != 0) { cpc_print("ERROR: DNS failed\r\n"); goto done; }
+    if (rc != 0) {
+        cpc_print("ERROR: DNS rc=");
+        print_uint((unsigned int)(rc < 0 ? (unsigned int)(-rc) : (unsigned int)rc));
+#ifdef NET_M4
+        cpc_print(" resp3="); print_uint(dns_diag_resp3);
+        cpc_print(" sock0="); print_uint(dns_diag_sock0);
+#endif
+        cpc_print("\r\n");
+        goto done;
+    }
 
     cpc_print("NTP server IP: ");
     print_ip(ntp_ip);

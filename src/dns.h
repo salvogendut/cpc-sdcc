@@ -21,4 +21,8 @@
 int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
                 unsigned char *result_ip);
 
+/* M4 build only: diagnostic fields populated before any error return. */
+extern unsigned char dns_diag_resp3;   /* resp[3] from C_NETHOSTIP response */
+extern unsigned char dns_diag_sock0;   /* sock0[0] after poll exits */
+
 #endif /* DNS_H */

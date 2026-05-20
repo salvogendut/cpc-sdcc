@@ -17,6 +17,10 @@
 #define C_NETHOSTIP           0x4336
 #define M4_SOCK_STATE_DNS     5   /* DNS lookup in progress */
 
+/* Diagnostic fields set before returning any error — read from main.c. */
+unsigned char dns_diag_resp3;
+unsigned char dns_diag_sock0;
+
 int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
                 unsigned char *result_ip) {
     unsigned char len;
@@ -41,6 +45,7 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     m4_wait();
 
     resp = m4_resp();
+    dns_diag_resp3 = resp[3];
     if (resp[3] != 1) return -1;         /* 1 = lookup started; anything else = error */
 
     /* Socket 0 info starts at the socket table base (no N*16 offset for socket 0).
@@ -54,6 +59,7 @@ int dns_resolve(const unsigned char *dns_server_ip, const char *hostname,
     while (timeout--) {
         if (sock0[0] != M4_SOCK_STATE_DNS) break;
     }
+    dns_diag_sock0 = sock0[0];
     if (!timeout) return -3;             /* timeout */
 
     if (sock0[0] != 0) return -4;        /* lookup failed */
