@@ -15,12 +15,12 @@
 /* NTP epoch offset: seconds from 1900-01-01 to 1970-01-01 */
 #define NTP_EPOCH_OFFSET 2208988800UL
 
-static const char ntp_host[] = "time.akamai.com";
+static const char ntp_host[] = "example.com";
 
 #ifdef NET_M4
 static unsigned char http_buf[512];
 static const char http_req[] =
-    "GET / HTTP/1.0\r\nHost: time.akamai.com\r\nConnection: close\r\n\r\n";
+    "GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n";
 #else
 static unsigned char ntp_packet[NTP_PKT_SIZE];
 static unsigned char ntp_reply[NTP_PKT_SIZE];
