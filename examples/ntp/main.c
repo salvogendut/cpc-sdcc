@@ -134,32 +134,27 @@ void main(void) {
     if (rc == -2) { cpc_print("no chip\r\n");        goto done; }
     cpc_print(" OK\r\n");
 
-    /* Step 2: DNS resolve NTP host */
+    /* Step 2: resolve NTP host */
+#ifdef NET_M4
+    /* M4 C_NETHOSTIP is unreliable on some firmware versions — use the local
+     * gateway directly.  Many home routers serve NTP on port 123. */
+    ntp_ip[0] = 192; ntp_ip[1] = 168; ntp_ip[2] = 68; ntp_ip[3] = 1;
+    cpc_print("NTP target: "); print_ip(ntp_ip); cpc_print("\r\n");
+    (void)dns_server;
+#else
     cpc_print("Resolving: ");
     cpc_print(ntp_host);
     cpc_print("\r\n");
-
-#ifdef NET_M4
-    dns_server[0] = dns_server[1] = dns_server[2] = dns_server[3] = 0;
-#else
     dns_server[0] = w5100_read_reg(N_DNS0);
     dns_server[1] = w5100_read_reg(N_DNS0 + 1);
     dns_server[2] = w5100_read_reg(N_DNS0 + 2);
     dns_server[3] = w5100_read_reg(N_DNS0 + 3);
-#endif
-
     rc = dns_resolve(dns_server, ntp_host, ntp_ip);
     if (rc != 0) {
-        cpc_print("ERROR: DNS rc=");
-        print_uint((unsigned int)(rc < 0 ? (unsigned int)(-rc) : (unsigned int)rc));
-#ifdef NET_M4
-        cpc_print(" resp3="); print_uint(dns_diag_resp3);
-        cpc_print(" sock0="); print_uint(dns_diag_sock0);
-        cpc_print(" ip=");    print_ip(dns_diag_ip);
-#endif
-        cpc_print("\r\n");
+        cpc_print("ERROR: DNS\r\n");
         goto done;
     }
+#endif
 
     cpc_print("NTP server IP: ");
     print_ip(ntp_ip);

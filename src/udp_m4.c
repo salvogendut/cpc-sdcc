@@ -24,6 +24,7 @@
 static unsigned char m4_udp_socket;
 
 static unsigned char *m4_udp_info(void) {
+    m4_select_rom();
     return (unsigned char *)(*(unsigned int *)0xFF06) +
            (unsigned int)m4_udp_socket * 16;
 }
