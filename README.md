@@ -127,3 +127,8 @@ All three ported examples (tcptest, ntp, telnet) are confirmed working on hardwa
 ## Acknowledgements
 
 - **[llopis/amstrad-diagnostics](https://github.com/llopis/amstrad-diagnostics)** — CPC model detection signatures and RAM test patterns used as reference for `src/cpcdetect.c`.
+- **[fergusleen/m4ewenterm](https://github.com/fergusleen/m4ewenterm)** — M4 WiFi card TCP/Telnet client; primary reference for the M4 command protocol and ROM management.
+- **[M4Duke/M4examples](https://github.com/M4Duke/M4examples)** — official M4 board example code and protocol documentation.
+- **[fergusleen/cpcfax](https://github.com/fergusleen/cpcfax)** — Viewdata/Telnet client for CPC+M4; reference for IAC state machine and M4 ROM select patterns.
+- **[salafek/Net4CPC](https://github.com/salafek/Net4CPC)** — Net4CPC hardware design and W5100S interface reference.
+- **[salafek/KCNet-software-for-Net4CPC](https://github.com/salafek/KCNet-software-for-Net4CPC)** — KCNet software for Net4CPC; reference for W5100S driver patterns.
