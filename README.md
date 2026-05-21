@@ -132,3 +132,5 @@ All three ported examples (tcptest, ntp, telnet) are confirmed working on hardwa
 - **[fergusleen/cpcfax](https://github.com/fergusleen/cpcfax)** — Viewdata/Telnet client for CPC+M4; reference for IAC state machine and M4 ROM select patterns.
 - **[salafek/Net4CPC](https://github.com/salafek/Net4CPC)** — Net4CPC hardware design and W5100S interface reference.
 - **[salafek/KCNet-software-for-Net4CPC](https://github.com/salafek/KCNet-software-for-Net4CPC)** — KCNet software for Net4CPC; reference for W5100S driver patterns.
+- **[SDCC — Small Device C Compiler](https://sourceforge.net/projects/sdcc/)** — the C compiler used to build all binaries in this project.
+- **[Prodatron's SymbOS](https://www.symbos.org/)** — multitasking OS for Z80 machines; inspiration and reference for CPC system-level programming.
