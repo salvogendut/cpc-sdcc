@@ -169,7 +169,10 @@ parsed addresses into RAM at `&3F10`–`&3F1F` before calling the binary.  The b
 those 16 bytes directly; no file I/O in machine code.
 
 **Albireo (Unidos)** — the binary opens `N4C.CFG` itself via `CAS_IN_DIRECT`.  The BASIC
-loader just sets the screen mode, loads the binary, and calls it.  The USB/FAT AMSDOS
+loader collects any user input, then issues `MEMORY &3FFF` to lower HIMEM below `&4000`
+before loading the binary.  This is required because Unidos sets the default HIMEM above
+`&4000`, and CPC BASIC refuses to `LOAD` a binary into its managed memory area without
+this.  Run BASIC loaders with `RUN` or `CHAIN` — both work on Unidos.  The USB/FAT AMSDOS
 shifts CAS IN routine addresses by +3 from the standard ROM; handled at compile time with
 `-DAMSDOS_USB`.
 

@@ -19,6 +19,7 @@ unsigned char cursor_row;
 unsigned int  screen_offset;
 
 static unsigned char rom_state;
+static unsigned char screen_rom_open; /* nonzero when upper ROM already disabled */
 
 /* Disable upper ROM so we can write to 0xC000–0xFFFF */
 static void romdis(void) __naked {
@@ -36,6 +37,16 @@ static void romen(void) __naked {
         call #0xB90C
         ret
     __endasm;
+}
+
+/* Batch ROM-disable: no-op if already open.  Call screen_end() to match. */
+void screen_begin(void) {
+    if (!screen_rom_open) { romdis(); screen_rom_open = 1; }
+}
+
+/* End batch: re-enable upper ROM only if we were the one who disabled it. */
+void screen_end(void) {
+    if (screen_rom_open) { romen(); screen_rom_open = 0; }
 }
 
 /* SCR_SET_OFFSET: HL = screen offset (first int param → HL via sdcccall(1)) */
@@ -121,13 +132,13 @@ static void render_char(unsigned char ch) {
     unsigned int addr = screen_find_cursor();
     unsigned char *cptr = (unsigned char *)(CHARSET_BASE + ch);
     unsigned char row;
-    romdis();
+    screen_begin();
     for (row = 0; row < 8; row++) {
         *((unsigned char *)addr) = *cptr;
         cptr += 256;
         addr = (addr & 0x00FF) | ((unsigned int)((unsigned char)(addr >> 8) + 8) << 8);
     }
-    romen();
+    screen_end();
 }
 
 /* Blank `count` consecutive character cells starting at screen address `addr`.
@@ -137,7 +148,7 @@ void screen_blank_at(unsigned int addr, unsigned int count) {
     unsigned char row;
     unsigned char h;
     unsigned int col_addr;
-    romdis();
+    screen_begin();
     while (count--) {
         h = (unsigned char)(addr >> 8);
         col_addr = addr & 0x00FF;
@@ -149,14 +160,14 @@ void screen_blank_at(unsigned int addr, unsigned int count) {
         h = (unsigned char)(addr >> 8);
         addr = (addr & 0x00FF) | ((unsigned int)((h & 7) | 0xC0) << 8);
     }
-    romen();
+    screen_end();
 }
 
 void screen_cls(void) {
     mc_wait_flyback();
-    romdis();
+    screen_begin();
     fill_screen_zero();
-    romen();
+    screen_end();
     screen_offset = 0;
     scr_set_offset(0);
     cursor_col = 0;
@@ -201,9 +212,9 @@ void screen_cursor_draw(void) {
     /* Advance to scan line 7 (bottom of cell): add 7*8 = 56 to high byte */
     h = (unsigned char)(addr >> 8) + 56;
     addr = (addr & 0x00FF) | ((unsigned int)h << 8);
-    romdis();
+    screen_begin();
     *((unsigned char *)addr) ^= 0xFF;
-    romen();
+    screen_end();
 }
 
 void screen_cursor_erase(void) {

@@ -31,7 +31,7 @@ static void write_bytes(unsigned int reg, const unsigned char *src,
  */
 #define CAS_IN_OPEN   0xBC77
 #define CAS_IN_CLOSE  0xBC7A
-#define CAS_IN_DIRECT 0xBC83
+#define CAS_IN_DIRECT 0xBC80
 
 #elif defined(AMSDOS_STD)
 
@@ -41,7 +41,7 @@ static void write_bytes(unsigned int reg, const unsigned char *src,
  */
 #define CAS_IN_OPEN   0xBC74
 #define CAS_IN_CLOSE  0xBC77
-#define CAS_IN_DIRECT 0xBC80
+#define CAS_IN_DIRECT 0xBC7D
 
 #endif
 

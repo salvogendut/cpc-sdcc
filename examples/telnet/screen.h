@@ -18,6 +18,8 @@ void screen_set_fg(unsigned char ink);
 void screen_set_bg(unsigned char ink);
 void screen_cursor_draw(void);
 void screen_cursor_erase(void);
+void screen_begin(void);
+void screen_end(void);
 
 /* Called by screen_write; implemented in ansi.c */
 void ansi_feed(unsigned char c);

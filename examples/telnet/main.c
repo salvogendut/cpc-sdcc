@@ -215,6 +215,7 @@ void main(void) {
         if (!received && !net_is_connected()) break;
         if (received) {
             unsigned int i;
+            screen_begin();
             screen_cursor_erase();
             for (i = 0; i < received; i++) {
                 unsigned char c = recv_buf[i];
@@ -290,6 +291,7 @@ void main(void) {
                 }
             }
             screen_cursor_draw();
+            screen_end();
         }
 
         /* Send any pending keypress */
